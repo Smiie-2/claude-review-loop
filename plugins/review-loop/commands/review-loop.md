@@ -2,14 +2,14 @@
 description: "Start a review loop: implement task, get independent Codex review, address feedback"
 argument-hint: "<task description>"
 allowed-tools:
-  - Bash(${CLAUDE_PLUGIN_ROOT}/scripts/setup-review-loop.sh *)
+  - "Bash(${CLAUDE_PLUGIN_ROOT}/scripts/setup-review-loop.sh:*)"
 hide-from-slash-command-tool: "true"
 ---
 
 Run the setup script with the user's arguments:
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/setup-review-loop.sh $ARGUMENTS
+"${CLAUDE_PLUGIN_ROOT}/scripts/setup-review-loop.sh" $ARGUMENTS
 ```
 
 After setup completes successfully, proceed to implement the task described in the arguments. Work thoroughly and completely — write clean, well-structured, well-tested code.
