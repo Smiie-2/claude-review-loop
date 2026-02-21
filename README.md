@@ -28,7 +28,7 @@ After all agents finish, Codex deduplicates findings and writes a single consoli
 
 - [Claude Code](https://claude.ai/code) (CLI)
 - `jq` — `brew install jq` (macOS) / `apt install jq` (Linux)
-- [Codex CLI](https://github.com/openai/codex) (recommended) — `npm install -g @openai/codex`. Without Codex, the plugin falls back to asking Claude to self-review.
+- [Codex CLI](https://github.com/openai/codex) — `npm install -g @openai/codex`
 
 ### Codex multi-agent setup (important)
 
@@ -88,10 +88,6 @@ Claude will implement the task. When it finishes, the stop hook:
 ```
 /cancel-review
 ```
-
-### What happens if Codex isn't installed?
-
-The plugin gracefully falls back to asking Claude to self-review its changes.
 
 ## How it works
 

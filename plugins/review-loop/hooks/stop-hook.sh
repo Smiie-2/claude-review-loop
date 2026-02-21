@@ -278,15 +278,27 @@ case "$PHASE" in
     CODEX_EXIT=0
     START_TIME=$(date +%s)
 
-    if command -v codex &> /dev/null; then
-      log "Starting Codex multi-agent review (flags: $CODEX_FLAGS)"
-      # shellcheck disable=SC2086
-      codex $CODEX_FLAGS exec "$CODEX_PROMPT" >/dev/null 2>&1 || CODEX_EXIT=$?
-      ELAPSED=$(( $(date +%s) - START_TIME ))
-      log "Codex finished (exit=$CODEX_EXIT, elapsed=${ELAPSED}s)"
-    else
-      log "WARN: codex not found, skipping independent review"
+    if ! command -v codex &> /dev/null; then
+      log "ERROR: codex not found on PATH"
+      rm -f "$STATE_FILE"
+      REASON="ERROR: Codex CLI is not installed. The review loop requires Codex for independent code review.
+
+Install it: npm install -g @openai/codex
+
+Then ensure multi-agent is enabled in ~/.codex/config.toml:
+  [features]
+  multi_agent = true
+
+After installing, run /review-loop again."
+      jq -n --arg r "$REASON" '{decision:"block", reason:$r}'
+      exit 0
     fi
+
+    log "Starting Codex multi-agent review (flags: $CODEX_FLAGS)"
+    # shellcheck disable=SC2086
+    codex $CODEX_FLAGS exec "$CODEX_PROMPT" >/dev/null 2>&1 || CODEX_EXIT=$?
+    ELAPSED=$(( $(date +%s) - START_TIME ))
+    log "Codex finished (exit=$CODEX_EXIT, elapsed=${ELAPSED}s)"
 
     # Transition to addressing phase
     if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -295,9 +307,17 @@ case "$PHASE" in
       sed -i 's/^phase: task$/phase: addressing/' "$STATE_FILE"
     fi
 
-    # Build prompt for Claude based on whether the review file was created
-    if [ -f "$REVIEW_FILE" ]; then
-      REASON="An independent multi-agent code review from Codex has been written to ${REVIEW_FILE}.
+    if [ ! -f "$REVIEW_FILE" ]; then
+      log "ERROR: Codex finished but review file not found: $REVIEW_FILE"
+      rm -f "$STATE_FILE"
+      REASON="ERROR: Codex ran but did not produce a review file (${REVIEW_FILE}). This may mean the review timed out or Codex encountered an error. Check .claude/review-loop.log for details.
+
+Run /review-loop again to retry."
+      jq -n --arg r "$REASON" '{decision:"block", reason:$r}'
+      exit 0
+    fi
+
+    REASON="An independent multi-agent code review from Codex has been written to ${REVIEW_FILE}.
 
 Please:
 1. Read the review carefully
@@ -308,17 +328,6 @@ Please:
 6. When done addressing all relevant items, you may stop
 
 Use your own judgment. Do not blindly accept every suggestion."
-    else
-      REASON="Codex was unable to complete the review (${REVIEW_FILE} not found). This may mean codex is not installed or timed out.
-
-Please do a brief self-review of your changes covering:
-- Code quality and organization
-- Security vulnerabilities
-- Test coverage
-- Documentation (AGENTS.md)
-
-When satisfied, you may stop."
-    fi
 
     SYS_MSG="Review Loop [${REVIEW_ID}] — Phase 2/2: Address Codex feedback"
 
