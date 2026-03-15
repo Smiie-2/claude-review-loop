@@ -17,7 +17,7 @@ log() {
   echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" >> "$LOG_FILE"
 }
 
-trap 'log "ERROR: hook exited via ERR trap (line $LINENO)"; rm -f .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt; printf "{\"decision\":\"approve\"}\n"; exit 0' ERR
+trap 'log "ERROR: hook exited via ERR trap (line $LINENO)"; rm -f .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt .claude/review-loop-retries; printf "{\"decision\":\"approve\"}\n"; exit 0' ERR
 
 # Consume stdin (hook input JSON) — must read to avoid broken pipe
 HOOK_INPUT=$(cat)
@@ -396,26 +396,40 @@ Use your own judgment. Do not blindly accept every suggestion."
     if [ -f "$REVIEW_FILE" ]; then
       # Review exists — success
       log "Review loop complete (review_id=$REVIEW_ID)"
-      rm -f "$STATE_FILE" .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt
+      rm -f "$STATE_FILE" .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt .claude/review-loop-retries
       printf '{"decision":"approve"}\n'
     elif [ -f ".claude/review-loop-run-codex.sh" ]; then
-      # Runner script exists but review doesn't — Claude needs to run it
-      log "Review file not found ($REVIEW_FILE), Codex review not yet complete"
-      REASON="The Codex review has not been completed yet. Please run the review script (use a 600000ms timeout since reviews can take several minutes):
+      # Runner script exists but review doesn't — check retry limit
+      RETRY_FILE=".claude/review-loop-retries"
+      RETRY_COUNT=0
+      if [ -f "$RETRY_FILE" ]; then
+        RETRY_COUNT=$(cat "$RETRY_FILE" 2>/dev/null || echo 0)
+      fi
+      RETRY_COUNT=$(( RETRY_COUNT + 1 ))
+
+      if [ "$RETRY_COUNT" -ge 3 ]; then
+        log "ERROR: Codex failed $RETRY_COUNT times without producing review, failing open (review_id=$REVIEW_ID)"
+        rm -f "$STATE_FILE" .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt "$RETRY_FILE"
+        printf '{"decision":"approve"}\n'
+      else
+        echo "$RETRY_COUNT" > "$RETRY_FILE"
+        log "Review file not found ($REVIEW_FILE), retry $RETRY_COUNT/3"
+        REASON="The Codex review has not been completed yet (attempt $RETRY_COUNT/3). Please run the review script (use a 600000ms timeout since reviews can take several minutes):
 
 \`\`\`
 bash .claude/review-loop-run-codex.sh
 \`\`\`
 
 Then read ${REVIEW_FILE} and address the findings."
-      SYS_MSG="Review Loop [${REVIEW_ID}] — Codex review not yet complete"
-      jq -n --arg r "$REASON" --arg s "$SYS_MSG" \
-        '{decision:"block", reason:$r, systemMessage:$s}' 2>/dev/null \
-        || printf '{"decision":"block","reason":"Codex review not yet complete. Run: bash .claude/review-loop-run-codex.sh","systemMessage":"%s"}\n' "$SYS_MSG"
+        SYS_MSG="Review Loop [${REVIEW_ID}] — Codex review not yet complete (attempt $RETRY_COUNT/3)"
+        jq -n --arg r "$REASON" --arg s "$SYS_MSG" \
+          '{decision:"block", reason:$r, systemMessage:$s}' 2>/dev/null \
+          || printf '{"decision":"block","reason":"Codex review not yet complete (attempt %s/3). Run: bash .claude/review-loop-run-codex.sh","systemMessage":"%s"}\n' "$RETRY_COUNT" "$SYS_MSG"
+      fi
     else
       # Neither review nor runner script — orphaned state, fail-open
       log "ERROR: review file and runner script both missing, cleaning up (review_id=$REVIEW_ID)"
-      rm -f "$STATE_FILE" .claude/review-loop.lock .claude/review-loop-codex-prompt.txt
+      rm -f "$STATE_FILE" .claude/review-loop.lock .claude/review-loop-codex-prompt.txt .claude/review-loop-retries
       printf '{"decision":"approve"}\n'
     fi
     ;;
