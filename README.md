@@ -80,6 +80,7 @@ claude plugin update review-loop@smiie-review
 
 ```
 /codex-review
+# or fully qualified: /review-loop:codex-review
 ```
 
 Runs a Codex multi-agent review of your current changes (staged, unstaged, and recent commits). Presents findings organized by severity. You decide what to address — nothing is forced.
@@ -88,6 +89,7 @@ Runs a Codex multi-agent review of your current changes (staged, unstaged, and r
 
 ```
 /review-loop Add user authentication with JWT tokens and test coverage
+# or fully qualified: /review-loop:review-loop Add user authentication...
 ```
 
 Claude implements the task. When it finishes, the stop hook blocks exit, runs the Codex review, and Claude must address the findings before it can stop.
@@ -96,6 +98,7 @@ Claude implements the task. When it finishes, the stop hook blocks exit, runs th
 
 ```
 /cancel-review
+# or fully qualified: /review-loop:cancel-review
 ```
 
 Cancels either an active review loop or an in-progress on-demand review. Cleans up all temp files.
