@@ -1,24 +1,24 @@
 ---
 description: "Cancel an active review loop or on-demand Codex review"
 allowed-tools:
-  - Bash(test -f .claude/review-loop.local.md *)
-  - Bash(rm -f .claude/review-loop.local.md .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt .claude/codex-review-run.sh .claude/codex-review-prompt.txt)
+  - Bash(test -f .review-loop/* *)
+  - Bash(rm -f .review-loop/*)
   - Read
 ---
 
-Check if a review loop is active:
+Check if any review activity is active:
 
 ```bash
-test -f .claude/review-loop.local.md && echo "REVIEW_LOOP_ACTIVE" || echo "REVIEW_LOOP_NONE"
-test -f .claude/codex-review-run.sh && echo "CODEX_REVIEW_ACTIVE" || echo "CODEX_REVIEW_NONE"
+test -f .review-loop/state.md && echo "REVIEW_LOOP_ACTIVE" || echo "REVIEW_LOOP_NONE"
+test -f .review-loop/codex-review-run.sh && echo "CODEX_REVIEW_ACTIVE" || echo "CODEX_REVIEW_NONE"
 ```
 
-If a review loop is active, read `.claude/review-loop.local.md` to get the current phase and review ID.
+If a review loop is active, read `.review-loop/state.md` to get the current phase and review ID.
 
 Then remove all state files, lock files, and generated Codex files:
 
 ```bash
-rm -f .claude/review-loop.local.md .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt .claude/codex-review-run.sh .claude/codex-review-prompt.txt
+rm -f .review-loop/state.md .review-loop/lock .review-loop/retries .review-loop/review-loop-run-codex.sh .review-loop/review-loop-codex-prompt.txt .review-loop/codex-review-run.sh .review-loop/codex-review-prompt.txt
 ```
 
 Report what was cleaned up:

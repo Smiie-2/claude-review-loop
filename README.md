@@ -15,7 +15,7 @@ This fork adds **`/codex-review`** — a standalone command that triggers the sa
 | **Trigger** | Run anytime | Starts a full task lifecycle |
 | **Workflow** | None — presents findings, you decide | Locked: implement → review → fix → exit |
 | **Exit blocking** | No | Yes (stop hook blocks until review is addressed) |
-| **State files** | None | `.claude/review-loop.local.md` tracks phase |
+| **State files** | None | `.review-loop/state.md` tracks phase |
 | **Fixes** | Your choice | Claude must address findings before exiting |
 
 Both commands share the same review prompt and Codex integration under the hood (`scripts/codex-review-lib.sh`).
@@ -120,14 +120,14 @@ Uses a **Stop hook** to enforce a two-phase lifecycle:
 1. **Task phase**: Claude implements the task you described
 2. **Review phase**: On exit, the hook prepares a Codex runner script, blocks Claude's exit, and instructs it to run the review and address findings
 
-State is tracked in `.claude/review-loop.local.md`. Reviews are written to `reviews/review-<id>.md`.
+State is tracked in `.review-loop/state.md` (gitignored). Reviews are written to `reviews/review-<id>.md`.
 
 ## File structure
 
 ```
 plugins/review-loop/
 ├── .claude-plugin/
-│   └── plugin.json              # Plugin manifest (v1.9.0)
+│   └── plugin.json              # Plugin manifest (v2.0.0)
 ├── commands/
 │   ├── codex-review.md          # /codex-review — on-demand review
 │   ├── review-loop.md           # /review-loop — full locked workflow
@@ -151,7 +151,7 @@ plugins/review-loop/
 
 ### Telemetry
 
-Execution logs are written to `.claude/review-loop.log` with timestamps, codex exit codes, and elapsed times. This file is gitignored.
+Execution logs are written to `.review-loop/review-loop.log` (for `/review-loop`) or `.review-loop/codex-review.log` (for `/codex-review`). These are gitignored.
 
 ## Credits
 

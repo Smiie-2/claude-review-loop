@@ -14,7 +14,6 @@ detect_nextjs() {
 }
 
 detect_browser_ui() {
-  # Has HTML/JSX/TSX files in app/ or pages/ or src/ directories, or has a public/ dir
   [ -d "app" ] || [ -d "pages" ] || [ -d "src/app" ] || [ -d "src/pages" ] || \
     [ -d "public" ] || [ -f "index.html" ]
 }
@@ -30,23 +29,38 @@ ensure_codex_ready() {
 }
 
 # ── Ensure multi-agent is configured in ~/.codex/config.toml ─────────────
-# Auto-configures if missing. Returns 0 on success. Handles macOS/Linux sed -i.
+# Auto-configures if missing or set to false. Returns 0 on success.
+# Handles macOS/Linux sed -i differences.
 ensure_multi_agent_configured() {
   local CODEX_CONFIG="${HOME}/.codex/config.toml"
+
   if [ ! -f "$CODEX_CONFIG" ]; then
+    # No config file — create with multi_agent enabled
     mkdir -p "${HOME}/.codex"
     printf '[features]\nmulti_agent = true\n' > "$CODEX_CONFIG"
     echo "Created ~/.codex/config.toml with multi_agent enabled"
-  elif ! grep -qE '^\s*multi_agent\s*=\s*true' "$CODEX_CONFIG"; then
-    if grep -qE '^\[features\]' "$CODEX_CONFIG"; then
-      if [ "$(uname)" = "Darwin" ]; then
-        sed -i '' '/^\[features\]/a\'$'\n''multi_agent = true' "$CODEX_CONFIG"
-      else
-        sed -i '/^\[features\]/a multi_agent = true' "$CODEX_CONFIG"
-      fi
+  elif grep -qE '^\s*multi_agent\s*=\s*true' "$CODEX_CONFIG"; then
+    # Already enabled — nothing to do
+    :
+  elif grep -qE '^\s*multi_agent\s*=' "$CODEX_CONFIG"; then
+    # Key exists but is not true (e.g. false) — rewrite in place
+    if [ "$(uname)" = "Darwin" ]; then
+      sed -i '' 's/^\([[:space:]]*\)multi_agent[[:space:]]*=.*/\1multi_agent = true/' "$CODEX_CONFIG"
     else
-      printf '\n[features]\nmulti_agent = true\n' >> "$CODEX_CONFIG"
+      sed -i 's/^\(\s*\)multi_agent\s*=.*/\1multi_agent = true/' "$CODEX_CONFIG"
     fi
+    echo "Updated multi_agent to true in ~/.codex/config.toml"
+  elif grep -qE '^\[features\]' "$CODEX_CONFIG"; then
+    # [features] section exists but no multi_agent key — append under it
+    if [ "$(uname)" = "Darwin" ]; then
+      sed -i '' '/^\[features\]/a\'$'\n''multi_agent = true' "$CODEX_CONFIG"
+    else
+      sed -i '/^\[features\]/a multi_agent = true' "$CODEX_CONFIG"
+    fi
+    echo "Enabled multi_agent in ~/.codex/config.toml"
+  else
+    # No [features] section at all — append it
+    printf '\n[features]\nmulti_agent = true\n' >> "$CODEX_CONFIG"
     echo "Enabled multi_agent in ~/.codex/config.toml"
   fi
   return 0
@@ -62,7 +76,6 @@ build_review_prompt() {
   detect_nextjs && IS_NEXTJS=true
   detect_browser_ui && HAS_UI=true
 
-  # ── Preamble ──
   cat << PREAMBLE_EOF
 You are orchestrating a thorough, independent code review of recent changes in this repository.
 
@@ -72,7 +85,6 @@ IMPORTANT: Spawn one agent per review path below. Wait for all agents to finish.
 
 PREAMBLE_EOF
 
-  # ── Agent 1: Diff Review ──
   cat << 'DIFF_EOF'
 ---
 AGENT 1: Diff Review (focus on uncommitted and recently committed changes ONLY)
@@ -107,7 +119,6 @@ For each issue: return file path, line number, severity (critical/high/medium/lo
 
 DIFF_EOF
 
-  # ── Agent 2: Holistic Review ──
   cat << 'HOLISTIC_EOF'
 ---
 AGENT 2: Holistic Review (evaluate overall project structure and agent readiness)
@@ -143,7 +154,6 @@ For each issue: return file path (or directory), severity (critical/high/medium/
 
 HOLISTIC_EOF
 
-  # ── Agent 3: Next.js Best Practices (conditional) ──
   if [ "$IS_NEXTJS" = "true" ]; then
     cat << 'NEXTJS_EOF'
 ---
@@ -193,7 +203,6 @@ For each issue: return file path, line number, severity (critical/high/medium/lo
 NEXTJS_EOF
   fi
 
-  # ── Agent 4: UX & Browser Testing (conditional) ──
   if [ "$HAS_UI" = "true" ]; then
     cat << 'UX_EOF'
 ---
@@ -219,7 +228,6 @@ For each issue: return screenshot description, severity, category, description, 
 UX_EOF
   fi
 
-  # ── Consolidation instructions ──
   cat << CONSOLIDATION_EOF
 ---
 CONSOLIDATION INSTRUCTIONS (after all agents complete):
@@ -246,7 +254,7 @@ write_runner_script() {
   local PROMPT_FILE="$1"
   local RUNNER_SCRIPT="$2"
   local CODEX_FLAGS="$3"
-  local LOG_FILE="${4:-.claude/review-loop.log}"
+  local LOG_FILE="${4:-.review-loop/review-loop.log}"
 
   cat > "$RUNNER_SCRIPT" << RUNNER_EOF
 #!/usr/bin/env bash

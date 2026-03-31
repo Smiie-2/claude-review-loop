@@ -10,14 +10,14 @@
 # Environment variables:
 #   REVIEW_LOOP_CODEX_FLAGS  Override codex flags (default: --dangerously-bypass-approvals-and-sandbox)
 
-LOG_FILE=".claude/review-loop.log"
+LOG_FILE=".review-loop/review-loop.log"
 
 log() {
   mkdir -p "$(dirname "$LOG_FILE")"
   echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" >> "$LOG_FILE"
 }
 
-trap 'log "ERROR: hook exited via ERR trap (line $LINENO)"; rm -f .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt .claude/review-loop-retries; printf "{\"decision\":\"approve\"}\n"; exit 0' ERR
+trap 'log "ERROR: hook exited via ERR trap (line $LINENO)"; rm -f .review-loop/lock .review-loop/review-loop-run-codex.sh .review-loop/review-loop-codex-prompt.txt .review-loop/retries; printf "{\"decision\":\"approve\"}\n"; exit 0' ERR
 
 # Source shared library (prompt building, project detection, codex validation)
 source "$(dirname "$0")/../scripts/codex-review-lib.sh"
@@ -25,7 +25,7 @@ source "$(dirname "$0")/../scripts/codex-review-lib.sh"
 # Consume stdin (hook input JSON) — must read to avoid broken pipe
 HOOK_INPUT=$(cat)
 
-STATE_FILE=".claude/review-loop.local.md"
+STATE_FILE=".review-loop/state.md"
 
 # No active loop → allow exit
 if [ ! -f "$STATE_FILE" ]; then
@@ -62,8 +62,6 @@ transition_phase() {
   local new_phase="$1"
   local TEMP_FILE="${STATE_FILE}.tmp.$$"
 
-  # Rewrite: replace 'phase: <anything>' with 'phase: <new_phase>'
-  # Use awk for robustness — handles whitespace variants, no anchoring issues
   awk -v np="$new_phase" '{
     if ($0 ~ /^phase:/) { print "phase: " np }
     else { print }
@@ -71,7 +69,6 @@ transition_phase() {
 
   mv "$TEMP_FILE" "$STATE_FILE"
 
-  # Verify the transition succeeded
   local CHECK
   CHECK=$(parse_field "phase")
   if [ "$CHECK" != "$new_phase" ]; then
@@ -85,11 +82,11 @@ transition_phase() {
 case "$PHASE" in
   task)
     # ── Phase 1 → 2: Prepare Codex review for Claude to run directly ────
-    # Instead of running Codex inside this hook (which blocks Claude and
-    # hides all output), we write the prompt and a runner script, then tell
-    # Claude to execute it via Bash so Codex output streams to the user.
     REVIEW_FILE="reviews/review-${REVIEW_ID}.md"
     mkdir -p reviews
+
+    # Clear stale retries from any previous run
+    rm -f .review-loop/retries
 
     CODEX_PROMPT=$(build_review_prompt "$REVIEW_FILE")
 
@@ -121,15 +118,14 @@ Then run /review-loop again."
     fi
 
     # Write prompt to file for the runner script to read
-    PROMPT_FILE=".claude/review-loop-codex-prompt.txt"
+    PROMPT_FILE=".review-loop/review-loop-codex-prompt.txt"
     printf '%s' "$CODEX_PROMPT" > "$PROMPT_FILE"
 
     # Generate runner script that Claude will execute via Bash tool
-    RUNNER_SCRIPT=".claude/review-loop-run-codex.sh"
-    write_runner_script "$PROMPT_FILE" "$RUNNER_SCRIPT" "$CODEX_FLAGS"
+    RUNNER_SCRIPT=".review-loop/review-loop-run-codex.sh"
+    write_runner_script "$PROMPT_FILE" "$RUNNER_SCRIPT" "$CODEX_FLAGS" "$LOG_FILE"
 
-    # Transition to addressing phase — fail-open if this breaks, otherwise
-    # a failed transition leaves phase=task and the next stop re-runs everything.
+    # Transition to addressing phase — fail-open if this breaks
     if ! transition_phase "addressing"; then
       log "ERROR: phase transition failed, cleaning up"
       rm -f "$STATE_FILE" "$RUNNER_SCRIPT" "$PROMPT_FILE"
@@ -143,7 +139,7 @@ Then run /review-loop again."
 
 Execute this command (use a 600000ms timeout since reviews can take several minutes):
 \`\`\`
-bash .claude/review-loop-run-codex.sh
+bash .review-loop/review-loop-run-codex.sh
 \`\`\`
 
 After the review completes, read ${REVIEW_FILE} and address the findings:
@@ -160,7 +156,7 @@ Use your own judgment. Do not blindly accept every suggestion."
 
     jq -n --arg r "$REASON" --arg s "$SYS_MSG" \
       '{decision:"block", reason:$r, systemMessage:$s}' 2>/dev/null \
-      || printf '{"decision":"block","reason":"Phase 1 complete. Run: bash .claude/review-loop-run-codex.sh then address the review.","systemMessage":"%s"}\n' "$SYS_MSG"
+      || printf '{"decision":"block","reason":"Phase 1 complete. Run: bash .review-loop/review-loop-run-codex.sh then address the review.","systemMessage":"%s"}\n' "$SYS_MSG"
     ;;
 
   addressing)
@@ -169,11 +165,11 @@ Use your own judgment. Do not blindly accept every suggestion."
     if [ -f "$REVIEW_FILE" ]; then
       # Review exists — success
       log "Review loop complete (review_id=$REVIEW_ID)"
-      rm -f "$STATE_FILE" .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt .claude/review-loop-retries
+      rm -f "$STATE_FILE" .review-loop/lock .review-loop/review-loop-run-codex.sh .review-loop/review-loop-codex-prompt.txt .review-loop/retries
       printf '{"decision":"approve"}\n'
-    elif [ -f ".claude/review-loop-run-codex.sh" ]; then
+    elif [ -f ".review-loop/review-loop-run-codex.sh" ]; then
       # Runner script exists but review doesn't — check retry limit
-      RETRY_FILE=".claude/review-loop-retries"
+      RETRY_FILE=".review-loop/retries"
       RETRY_COUNT=0
       if [ -f "$RETRY_FILE" ]; then
         RETRY_COUNT=$(cat "$RETRY_FILE" 2>/dev/null || echo 0)
@@ -181,9 +177,8 @@ Use your own judgment. Do not blindly accept every suggestion."
       RETRY_COUNT=$(( RETRY_COUNT + 1 ))
 
       if [ "$RETRY_COUNT" -ge 2 ]; then
-        # Already told Claude to run the script once — Codex failed, don't retry
         log "ERROR: Codex failed to produce review, failing open (review_id=$REVIEW_ID)"
-        rm -f "$STATE_FILE" .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt "$RETRY_FILE"
+        rm -f "$STATE_FILE" .review-loop/lock .review-loop/review-loop-run-codex.sh .review-loop/review-loop-codex-prompt.txt "$RETRY_FILE"
         printf '{"decision":"approve"}\n'
       else
         echo "$RETRY_COUNT" > "$RETRY_FILE"
@@ -191,19 +186,19 @@ Use your own judgment. Do not blindly accept every suggestion."
         REASON="The Codex review has not been completed yet. Please run the review script (use a 600000ms timeout since reviews can take several minutes):
 
 \`\`\`
-bash .claude/review-loop-run-codex.sh
+bash .review-loop/review-loop-run-codex.sh
 \`\`\`
 
 Then read ${REVIEW_FILE} and address the findings."
         SYS_MSG="Review Loop [${REVIEW_ID}] — Codex review not yet complete"
         jq -n --arg r "$REASON" --arg s "$SYS_MSG" \
           '{decision:"block", reason:$r, systemMessage:$s}' 2>/dev/null \
-          || printf '{"decision":"block","reason":"Codex review not yet complete. Run: bash .claude/review-loop-run-codex.sh","systemMessage":"%s"}\n' "$SYS_MSG"
+          || printf '{"decision":"block","reason":"Codex review not yet complete. Run: bash .review-loop/review-loop-run-codex.sh","systemMessage":"%s"}\n' "$SYS_MSG"
       fi
     else
       # Neither review nor runner script — orphaned state, fail-open
       log "ERROR: review file and runner script both missing, cleaning up (review_id=$REVIEW_ID)"
-      rm -f "$STATE_FILE" .claude/review-loop.lock .claude/review-loop-codex-prompt.txt .claude/review-loop-retries
+      rm -f "$STATE_FILE" .review-loop/lock .review-loop/review-loop-codex-prompt.txt .review-loop/retries
       printf '{"decision":"approve"}\n'
     fi
     ;;
@@ -211,7 +206,7 @@ Then read ${REVIEW_FILE} and address the findings."
   *)
     # Unknown phase — clean up and allow exit
     log "WARN: unknown phase '$PHASE', cleaning up"
-    rm -f "$STATE_FILE" .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt
+    rm -f "$STATE_FILE" .review-loop/lock .review-loop/review-loop-run-codex.sh .review-loop/review-loop-codex-prompt.txt
     printf '{"decision":"approve"}\n'
     ;;
 esac

@@ -13,7 +13,7 @@ allowed-tools:
 First, set up the review loop by running this setup command:
 
 ```bash
-set -e && REVIEW_ID="$(date +%Y%m%d-%H%M%S)-$(openssl rand -hex 3 2>/dev/null || head -c 3 /dev/urandom | od -An -tx1 | tr -d ' \n')" && mkdir -p .claude reviews && if [ -f .claude/review-loop.local.md ]; then echo "Error: A review loop is already active. Use /cancel-review first." && exit 1; fi && LIB_PATH="$(find ~/.claude -path '*/review-loop/scripts/codex-review-lib.sh' 2>/dev/null | head -1)" && if [ -z "$LIB_PATH" ]; then echo "Error: Could not find codex-review-lib.sh. Is the review-loop plugin installed?"; exit 1; fi && source "$LIB_PATH" && CODEX_ERROR=$(ensure_codex_ready 2>&1) || { echo "Error: $CODEX_ERROR"; exit 1; } && ensure_multi_agent_configured && rm -f .claude/review-loop.lock && cat > .claude/review-loop.local.md << STATE_EOF
+set -e && REVIEW_ID="$(date +%Y%m%d-%H%M%S)-$(openssl rand -hex 3 2>/dev/null || head -c 3 /dev/urandom | od -An -tx1 | tr -d ' \n')" && mkdir -p .review-loop reviews && if [ -f .review-loop/state.md ]; then echo "Error: A review loop is already active. Use /cancel-review first." && exit 1; fi && LIB_PATH="$(find "$HOME/.claude/plugins" -path '*/review-loop/scripts/codex-review-lib.sh' 2>/dev/null | head -1)" && if [ -z "$LIB_PATH" ]; then LIB_PATH="$(find "$HOME/.claude" -path '*/review-loop/scripts/codex-review-lib.sh' 2>/dev/null | head -1)"; fi && if [ -z "$LIB_PATH" ] || [ ! -r "$LIB_PATH" ]; then echo "Error: Could not find codex-review-lib.sh. Is the review-loop plugin installed?"; exit 1; fi && source "$LIB_PATH" && CODEX_ERROR=$(ensure_codex_ready 2>&1) || { echo "Error: $CODEX_ERROR"; exit 1; } && ensure_multi_agent_configured && rm -f .review-loop/lock .review-loop/retries && cat > .review-loop/state.md << STATE_EOF
 ---
 active: true
 phase: task
@@ -32,7 +32,7 @@ When you believe the task is fully done, stop. The review loop stop hook will au
 1. Prepare a Codex runner script and prompt file
 2. Block your exit with instructions to run the review
 
-You will then run `bash .claude/review-loop-run-codex.sh` to execute the Codex review (output streams to the user for visibility). After Codex finishes, read the review file and address the findings.
+You will then run `bash .review-loop/review-loop-run-codex.sh` to execute the Codex review (output streams to the user for visibility). After Codex finishes, read the review file and address the findings.
 
 RULES:
 - Complete the task to the best of your ability before stopping
