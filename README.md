@@ -1,18 +1,24 @@
-# review-loop
+# claude-review-loop (fork)
 
-A Claude Code plugin that adds an automated code review loop to your workflow.
+A Claude Code plugin that integrates [Codex](https://github.com/openai/codex) multi-agent reviews into your workflow — either on-demand or as a full implement-review-fix loop.
 
-## What it does
+This is a fork of [hamelsmu/claude-review-loop](https://github.com/hamelsmu/claude-review-loop) that adds a standalone `/codex-review` command for on-demand reviews without the locked workflow.
 
-When you use `/review-loop`, the plugin creates a two-phase lifecycle:
+## What changed in this fork
 
-1. **Task phase**: You describe a task, Claude implements it
-2. **Review phase**: When Claude finishes, the stop hook prepares a [Codex](https://github.com/openai/codex) runner script and blocks exit. Claude then runs Codex directly (with output streaming to the user) and addresses the review feedback.
+The original plugin only offers `/review-loop`, which locks you into a rigid cycle: describe task → Claude implements → Codex reviews → Claude fixes → exit. That's useful for fully automated workflows, but too restrictive if you prefer to stay in control.
 
-The result: every task gets an independent second opinion before you accept the changes, and you can watch the review happen in real time.
+This fork adds **`/codex-review`** — a standalone command that triggers the same Codex multi-agent review at any point, without locking you into anything. You get the review, you decide what to do with it.
 
-<img width="2284" height="1959" alt="memelord_meme_2026-02-22 (3)" src="https://github.com/user-attachments/assets/75af1351-47e6-4b70-a50a-9b3311773be7" />
+| | `/codex-review` (new) | `/review-loop` (original) |
+|---|---|---|
+| **Trigger** | Run anytime | Starts a full task lifecycle |
+| **Workflow** | None — presents findings, you decide | Locked: implement → review → fix → exit |
+| **Exit blocking** | No | Yes (stop hook blocks until review is addressed) |
+| **State files** | None | `.claude/review-loop.local.md` tracks phase |
+| **Fixes** | Your choice | Claude must address findings before exiting |
 
+Both commands share the same review prompt and Codex integration under the hood (`scripts/codex-review-lib.sh`).
 
 ## Review coverage
 
@@ -35,7 +41,7 @@ After all agents finish, Codex deduplicates findings and writes a single consoli
 
 ### Codex multi-agent
 
-This plugin uses Codex [multi-agent](https://developers.openai.com/codex/multi-agent/) to run parallel review agents. The `/review-loop` command automatically enables it in `~/.codex/config.toml` on first use.
+This plugin uses Codex [multi-agent](https://developers.openai.com/codex/multi-agent/) to run parallel review agents. Both `/codex-review` and `/review-loop` automatically enable it in `~/.codex/config.toml` on first use.
 
 To set it up manually instead:
 
@@ -50,78 +56,92 @@ multi_agent = true
 From the CLI:
 
 ```bash
-claude plugin marketplace add hamelsmu/claude-review-loop
-claude plugin install review-loop@hamel-review
+claude plugin marketplace add Smiie-2/claude-review-loop
+claude plugin install review-loop@smiie-review
 ```
 
 Or from within a Claude Code session:
 
 ```
-/plugin marketplace add hamelsmu/claude-review-loop
-/plugin install review-loop@hamel-review
+/plugin marketplace add Smiie-2/claude-review-loop
+/plugin install review-loop@smiie-review
 ```
-
 
 ## Updating
 
 ```bash
-claude plugin marketplace update hamel-review
-claude plugin update review-loop@hamel-review
+claude plugin marketplace update smiie-review
+claude plugin update review-loop@smiie-review
 ```
 
 ## Usage
 
-### Start a review loop
+### On-demand review (recommended)
+
+```
+/codex-review
+```
+
+Runs a Codex multi-agent review of your current changes (staged, unstaged, and recent commits). Presents findings organized by severity. You decide what to address — nothing is forced.
+
+### Full review loop
 
 ```
 /review-loop Add user authentication with JWT tokens and test coverage
 ```
 
-Claude will implement the task. When it finishes, the stop hook:
-1. Prepares a Codex runner script and prompt file
-2. Blocks Claude's exit with instructions to run the review
-3. Claude runs `bash .claude/review-loop-run-codex.sh` — Codex output streams to the user
-4. Codex writes findings to `reviews/review-<id>.md`
-5. Claude reads the review, addresses items it agrees with, then stops
+Claude implements the task. When it finishes, the stop hook blocks exit, runs the Codex review, and Claude must address the findings before it can stop.
 
-### Cancel a review loop
+### Cancel
 
 ```
 /cancel-review
 ```
 
+Cancels either an active review loop or an in-progress on-demand review. Cleans up all temp files.
+
 ## How it works
 
-The plugin uses a **Stop hook** — Claude Code's mechanism for intercepting agent exit. When Claude tries to stop:
+### `/codex-review`
 
-1. The hook reads the state file (`.claude/review-loop.local.md`)
-2. If in `task` phase: writes a runner script and prompt file, transitions to `addressing`, blocks exit with instructions for Claude to run Codex
-3. If in `addressing` phase: allows exit and cleans up
+1. Generates a review ID and validates Codex is installed
+2. Builds a context-aware review prompt (detects Next.js, UI projects)
+3. Runs `codex exec` with multi-agent — output streams to your terminal
+4. Codex writes findings to `reviews/review-<id>.md`
+5. Claude reads and presents the review to you
+6. Temp files are cleaned up
 
-State is tracked in `.claude/review-loop.local.md` (add to `.gitignore`). Reviews are written to `reviews/review-<id>.md`.
+No state files, no hooks, no exit blocking.
+
+### `/review-loop`
+
+Uses a **Stop hook** to enforce a two-phase lifecycle:
+
+1. **Task phase**: Claude implements the task you described
+2. **Review phase**: On exit, the hook prepares a Codex runner script, blocks Claude's exit, and instructs it to run the review and address findings
+
+State is tracked in `.claude/review-loop.local.md`. Reviews are written to `reviews/review-<id>.md`.
 
 ## File structure
 
 ```
-claude-review-loop/
+plugins/review-loop/
 ├── .claude-plugin/
-│   └── plugin.json           # Plugin manifest
+│   └── plugin.json              # Plugin manifest (v1.9.0)
 ├── commands/
-│   ├── review-loop.md        # /review-loop slash command
-│   └── cancel-review.md      # /cancel-review slash command
+│   ├── codex-review.md          # /codex-review — on-demand review
+│   ├── review-loop.md           # /review-loop — full locked workflow
+│   └── cancel-review.md         # /cancel-review — cancel either mode
 ├── hooks/
-│   ├── hooks.json            # Stop hook registration (30s timeout)
-│   └── stop-hook.sh          # Core lifecycle engine
+│   ├── hooks.json               # Stop hook registration (30s timeout)
+│   └── stop-hook.sh             # Review loop lifecycle engine
 ├── scripts/
-│   └── setup-review-loop.sh  # Argument parsing, state file creation
-├── AGENTS.md                  # Agent operating guidelines
-├── CLAUDE.md                  # Symlink to AGENTS.md
-└── README.md
+│   └── codex-review-lib.sh      # Shared library (prompt building, Codex validation)
+├── AGENTS.md                    # Agent operating guidelines
+└── CLAUDE.md                    # Symlink to AGENTS.md
 ```
 
 ## Configuration
-
-The stop hook timeout is set to 30 seconds in `hooks/hooks.json`. The hook itself is fast (it only writes files and returns a block decision); Codex runs separately via Claude's Bash tool.
 
 ### Environment variables
 
@@ -135,4 +155,4 @@ Execution logs are written to `.claude/review-loop.log` with timestamps, codex e
 
 ## Credits
 
-Inspired by the [Ralph Wiggum plugin](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum) and [Ryan Carson's compound engineering loop](https://x.com/ryancarson/article/2016520542723924279).
+Original plugin by [Hamel Husain](https://github.com/hamelsmu/claude-review-loop). Inspired by the [Ralph Wiggum plugin](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum) and [Ryan Carson's compound engineering loop](https://x.com/ryancarson/article/2016520542723924279).

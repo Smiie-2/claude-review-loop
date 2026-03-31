@@ -2,11 +2,21 @@
 
 ## What this is
 
-A Claude Code plugin that creates a two-phase review loop:
-1. Claude implements a task
-2. Stop hook prepares a Codex runner script and blocks Claude
-3. Claude executes the runner script via Bash (Codex output streams to user)
-4. Claude reads the review and addresses feedback
+A Claude Code plugin with two modes of Codex-powered code review:
+
+**`/codex-review`** — On-demand review. Runs a Codex multi-agent review of current changes and presents findings. No workflow lock, no forced fixes. Use anytime.
+
+**`/review-loop "<task>"`** — Full locked workflow. Claude implements a task, gets reviewed by Codex, then addresses feedback before exiting.
+
+Both modes share the same review prompt and Codex integration via `scripts/codex-review-lib.sh`.
+
+## Architecture
+
+- `scripts/codex-review-lib.sh` — Shared library (sourced, not executed). Contains: `detect_nextjs()`, `detect_browser_ui()`, `build_review_prompt()`, `ensure_codex_ready()`, `write_runner_script()`
+- `hooks/stop-hook.sh` — Stop hook for `/review-loop` phase management. Sources the shared library.
+- `commands/codex-review.md` — On-demand review command. Sources the shared library via `find`.
+- `commands/review-loop.md` — Locked workflow command.
+- `commands/cancel-review.md` — Cancels either mode.
 
 ## Conventions
 
@@ -15,8 +25,8 @@ A Claude Code plugin that creates a two-phase review loop:
 - Fail-open: on any error, approve exit rather than trapping the user
 - State lives in `.claude/review-loop.local.md` — always clean up on exit
 - Review ID format: `YYYYMMDD-HHMMSS-hexhex` — validate before using in paths
-- Codex runs via a runner script (`.claude/review-loop-run-codex.sh`) that Claude executes via Bash — output streams directly to the user for visibility
-- Codex prompt is saved to `.claude/review-loop-codex-prompt.txt` for the runner script
+- `/review-loop` temp files use `review-loop-` prefix; `/codex-review` uses `codex-review-` prefix — no collisions
+- Codex prompt is saved to a prompt file for the runner script to read
 - Telemetry goes to `.claude/review-loop.log` — structured, timestamped lines
 - Phase transitions use `transition_phase()` (awk rewrite + verify), NOT fragile sed regex
 - All `jq` calls that produce block decisions MUST have a `|| printf '...'` fallback — if jq fails, the ERR trap would silently approve exit and drop the review

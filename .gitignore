@@ -1,6 +1,16 @@
 # Review loop state (ephemeral, per-session)
 .claude/review-loop.local.md
 .claude/review-loop.log
+.claude/review-loop-run-codex.sh
+.claude/review-loop-codex-prompt.txt
+.claude/review-loop.lock
+.claude/review-loop-retries
+
+# On-demand codex review temp files
+.claude/codex-review-run.sh
+.claude/codex-review-prompt.txt
 
 # Review artifacts (generated, not source)
 reviews/
+# CocoIndex Code (ccc)
+/.cocoindex_code/

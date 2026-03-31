@@ -1,7 +1,7 @@
 {
   "name": "review-loop",
-  "version": "1.8.0",
-  "description": "Automated code review loop: Claude implements, Codex reviews independently, Claude addresses feedback",
+  "version": "1.9.0",
+  "description": "Codex-powered code reviews: on-demand via /codex-review, or as a full implement-review-fix loop via /review-loop",
   "author": {
     "name": "Hamel Husain"
   },

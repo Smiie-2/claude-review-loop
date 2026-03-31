@@ -1,22 +1,22 @@
 {
-  "name": "hamel-review",
+  "name": "smiie-review",
   "owner": {
-    "name": "Hamel Husain"
+    "name": "Smiie-2"
   },
   "metadata": {
-    "description": "Automated code review loop plugin for Claude Code"
+    "description": "Codex-powered code reviews: on-demand or as a full review loop"
   },
   "plugins": [
     {
       "name": "review-loop",
       "source": "./plugins/review-loop",
-      "description": "Automated code review loop: Claude implements, Codex reviews independently, Claude addresses feedback",
+      "description": "Codex-powered code reviews: on-demand via /codex-review, or as a full implement-review-fix loop via /review-loop",
       "author": {
-        "name": "Hamel Husain"
+        "name": "Smiie-2"
       },
-      "repository": "https://github.com/hamelsmu/claude-review-loop",
+      "repository": "https://github.com/Smiie-2/claude-review-loop",
       "license": "MIT",
-      "keywords": ["code-review", "codex", "quality", "automation"]
+      "keywords": ["code-review", "codex", "quality", "automation", "on-demand"]
     }
   ]
 }
