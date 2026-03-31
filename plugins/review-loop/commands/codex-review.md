@@ -23,27 +23,11 @@ if [ -z "$LIB_PATH" ]; then
 fi
 source "$LIB_PATH"
 
-# Validate Codex is ready
+# Validate Codex is installed
 CODEX_ERROR=$(ensure_codex_ready 2>&1) || { echo "ERROR: $CODEX_ERROR"; exit 1; }
 
-# Ensure multi-agent is configured (auto-configure if needed)
-CODEX_CONFIG="${HOME}/.codex/config.toml"
-if [ ! -f "$CODEX_CONFIG" ]; then
-  mkdir -p "${HOME}/.codex"
-  printf '[features]\nmulti_agent = true\n' > "$CODEX_CONFIG"
-  echo "Created ~/.codex/config.toml with multi_agent enabled"
-elif ! grep -qE '^\s*multi_agent\s*=\s*true' "$CODEX_CONFIG"; then
-  if grep -qE '^\[features\]' "$CODEX_CONFIG"; then
-    if [ "$(uname)" = "Darwin" ]; then
-      sed -i '' '/^\[features\]/a\'$'\n''multi_agent = true' "$CODEX_CONFIG"
-    else
-      sed -i '/^\[features\]/a multi_agent = true' "$CODEX_CONFIG"
-    fi
-  else
-    printf '\n[features]\nmulti_agent = true\n' >> "$CODEX_CONFIG"
-  fi
-  echo "Enabled multi_agent in ~/.codex/config.toml"
-fi
+# Ensure multi-agent is configured (auto-configures if needed)
+ensure_multi_agent_configured
 
 REVIEW_FILE="reviews/review-${REVIEW_ID}.md"
 CODEX_FLAGS="${REVIEW_LOOP_CODEX_FLAGS:---dangerously-bypass-approvals-and-sandbox}"
@@ -52,7 +36,7 @@ RUNNER_SCRIPT=".claude/codex-review-run.sh"
 
 # Build prompt and runner script
 build_review_prompt "$REVIEW_FILE" > "$PROMPT_FILE"
-write_runner_script "$PROMPT_FILE" "$RUNNER_SCRIPT" "$CODEX_FLAGS"
+write_runner_script "$PROMPT_FILE" "$RUNNER_SCRIPT" "$CODEX_FLAGS" ".claude/codex-review.log"
 
 echo "Codex review prepared (ID: ${REVIEW_ID})"
 echo "REVIEW_FILE=${REVIEW_FILE}"

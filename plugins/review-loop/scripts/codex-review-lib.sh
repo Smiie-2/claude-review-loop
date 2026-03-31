@@ -19,20 +19,36 @@ detect_browser_ui() {
     [ -d "public" ] || [ -f "index.html" ]
 }
 
-# ── Validate Codex installation and multi-agent config ────────────────────
+# ── Validate Codex CLI is installed ───────────────────────────────────────
 # Returns 0 on success, 1 on failure. Writes error message to stdout on failure.
 ensure_codex_ready() {
   if ! command -v codex &> /dev/null; then
     echo "Codex CLI is not installed. Install it: npm install -g @openai/codex"
     return 1
   fi
+  return 0
+}
 
+# ── Ensure multi-agent is configured in ~/.codex/config.toml ─────────────
+# Auto-configures if missing. Returns 0 on success. Handles macOS/Linux sed -i.
+ensure_multi_agent_configured() {
   local CODEX_CONFIG="${HOME}/.codex/config.toml"
-  if [ ! -f "$CODEX_CONFIG" ] || ! grep -qE '^\s*multi_agent\s*=\s*true' "$CODEX_CONFIG"; then
-    echo "Codex multi-agent is not enabled in ~/.codex/config.toml. Add: [features] multi_agent = true"
-    return 1
+  if [ ! -f "$CODEX_CONFIG" ]; then
+    mkdir -p "${HOME}/.codex"
+    printf '[features]\nmulti_agent = true\n' > "$CODEX_CONFIG"
+    echo "Created ~/.codex/config.toml with multi_agent enabled"
+  elif ! grep -qE '^\s*multi_agent\s*=\s*true' "$CODEX_CONFIG"; then
+    if grep -qE '^\[features\]' "$CODEX_CONFIG"; then
+      if [ "$(uname)" = "Darwin" ]; then
+        sed -i '' '/^\[features\]/a\'$'\n''multi_agent = true' "$CODEX_CONFIG"
+      else
+        sed -i '/^\[features\]/a multi_agent = true' "$CODEX_CONFIG"
+      fi
+    else
+      printf '\n[features]\nmulti_agent = true\n' >> "$CODEX_CONFIG"
+    fi
+    echo "Enabled multi_agent in ~/.codex/config.toml"
   fi
-
   return 0
 }
 
@@ -225,15 +241,16 @@ CONSOLIDATION_EOF
 }
 
 # ── Write the Codex runner script ─────────────────────────────────────────
-# Args: $1 = PROMPT_FILE, $2 = RUNNER_SCRIPT, $3 = CODEX_FLAGS
+# Args: $1 = PROMPT_FILE, $2 = RUNNER_SCRIPT, $3 = CODEX_FLAGS, $4 = LOG_FILE (optional)
 write_runner_script() {
   local PROMPT_FILE="$1"
   local RUNNER_SCRIPT="$2"
   local CODEX_FLAGS="$3"
+  local LOG_FILE="${4:-.claude/review-loop.log}"
 
   cat > "$RUNNER_SCRIPT" << RUNNER_EOF
 #!/usr/bin/env bash
-LOG_FILE=".claude/review-loop.log"
+LOG_FILE="${LOG_FILE}"
 log() { echo "[\$(date -u +"%Y-%m-%dT%H:%M:%SZ")] \$*" >> "\$LOG_FILE"; }
 
 PROMPT_FILE="${PROMPT_FILE}"

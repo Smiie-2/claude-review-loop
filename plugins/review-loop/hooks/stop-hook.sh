@@ -91,12 +91,11 @@ case "$PHASE" in
     REVIEW_FILE="reviews/review-${REVIEW_ID}.md"
     mkdir -p reviews
 
-    log "Project detection: nextjs=$(detect_nextjs && echo true || echo false), browser_ui=$(detect_browser_ui && echo true || echo false)"
     CODEX_PROMPT=$(build_review_prompt "$REVIEW_FILE")
 
     CODEX_FLAGS="${REVIEW_LOOP_CODEX_FLAGS:---dangerously-bypass-approvals-and-sandbox}"
 
-    # Validate Codex installation and multi-agent config
+    # Validate Codex installation
     CODEX_ERROR=$(ensure_codex_ready 2>&1) || {
       log "ERROR: $CODEX_ERROR"
       rm -f "$STATE_FILE"
@@ -107,6 +106,19 @@ Then run /review-loop again."
         || printf '{"decision":"block","reason":"%s"}\n' "$CODEX_ERROR"
       exit 0
     }
+
+    # Validate multi-agent config (should have been set up by /review-loop command)
+    CODEX_CONFIG="${HOME}/.codex/config.toml"
+    if [ ! -f "$CODEX_CONFIG" ] || ! grep -qE '^\s*multi_agent\s*=\s*true' "$CODEX_CONFIG"; then
+      log "ERROR: multi_agent not enabled in $CODEX_CONFIG"
+      rm -f "$STATE_FILE"
+      REASON="ERROR: Codex multi-agent is not enabled in ~/.codex/config.toml. This should have been configured by /review-loop but may have been changed.
+
+Then run /review-loop again."
+      jq -n --arg r "$REASON" '{decision:"block", reason:$r}' 2>/dev/null \
+        || printf '{"decision":"block","reason":"Codex multi-agent is not enabled in ~/.codex/config.toml"}\n'
+      exit 0
+    fi
 
     # Write prompt to file for the runner script to read
     PROMPT_FILE=".claude/review-loop-codex-prompt.txt"

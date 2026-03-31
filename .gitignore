@@ -9,6 +9,7 @@
 # On-demand codex review temp files
 .claude/codex-review-run.sh
 .claude/codex-review-prompt.txt
+.claude/codex-review.log
 
 # Review artifacts (generated, not source)
 reviews/
