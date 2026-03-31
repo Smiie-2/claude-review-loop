@@ -36,6 +36,18 @@ assert_contains() {
   fi
 }
 
+assert_not_contains() {
+  local label="$1" needle="$2" haystack="$3"
+  TESTS=$((TESTS + 1))
+  if echo "$haystack" | grep -qF -- "$needle"; then
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: $label (should NOT contain '$needle')"
+  else
+    PASS=$((PASS + 1))
+    echo "  PASS: $label"
+  fi
+}
+
 assert_file_exists() {
   local label="$1" path="$2"
   TESTS=$((TESTS + 1))
@@ -55,15 +67,12 @@ cd "$TMPDIR"
 
 echo "=== detect_nextjs ==="
 
-# No next.config → should fail
 assert_eq "no next project" "1" "$(detect_nextjs && echo 0 || echo 1)"
 
-# With next.config.js → should pass
 touch next.config.js
 assert_eq "next.config.js exists" "0" "$(detect_nextjs && echo 0 || echo 1)"
 rm next.config.js
 
-# With next in package.json → should pass
 echo '{"dependencies":{"next":"14.0.0"}}' > package.json
 assert_eq "next in package.json" "0" "$(detect_nextjs && echo 0 || echo 1)"
 rm package.json
@@ -71,20 +80,16 @@ rm package.json
 echo ""
 echo "=== detect_browser_ui ==="
 
-# No UI dirs → should fail
 assert_eq "no UI dirs" "1" "$(detect_browser_ui && echo 0 || echo 1)"
 
-# With app/ → should pass
 mkdir app
 assert_eq "app/ exists" "0" "$(detect_browser_ui && echo 0 || echo 1)"
 rmdir app
 
-# With index.html → should pass
 touch index.html
 assert_eq "index.html exists" "0" "$(detect_browser_ui && echo 0 || echo 1)"
 rm index.html
 
-# With public/ → should pass
 mkdir public
 assert_eq "public/ exists" "0" "$(detect_browser_ui && echo 0 || echo 1)"
 rmdir public
@@ -92,25 +97,35 @@ rmdir public
 echo ""
 echo "=== ensure_codex_ready ==="
 
-# Test with codex not on PATH (fake PATH to ensure codex isn't found)
 OUTPUT=$(PATH=/nonexistent ensure_codex_ready 2>&1) || true
 assert_contains "codex not installed message" "not installed" "$OUTPUT"
 
 echo ""
 echo "=== ensure_multi_agent_configured ==="
 
-# Test auto-creation of config
 export HOME="$TMPDIR/fakehome"
 mkdir -p "$HOME"
+
+# Test 1: auto-creation of config
 OUTPUT=$(ensure_multi_agent_configured 2>&1)
 assert_file_exists "config.toml created" "$HOME/.codex/config.toml"
 assert_contains "config has multi_agent" "multi_agent = true" "$(cat "$HOME/.codex/config.toml")"
 
-# Test idempotent — running again should not error
+# Test 2: idempotent — running again should produce no output
 OUTPUT=$(ensure_multi_agent_configured 2>&1)
 assert_eq "idempotent (no output on second run)" "" "$OUTPUT"
 
-# Test adding to existing config without [features]
+# Test 3: rewrite multi_agent = false → true (fix for review finding #1)
+rm -rf "$HOME/.codex"
+mkdir -p "$HOME/.codex"
+printf '[features]\nmulti_agent = false\n' > "$HOME/.codex/config.toml"
+OUTPUT=$(ensure_multi_agent_configured 2>&1)
+assert_contains "rewrote false to true" "multi_agent = true" "$(cat "$HOME/.codex/config.toml")"
+# Verify no duplicate keys
+MULTI_COUNT=$(grep -c 'multi_agent' "$HOME/.codex/config.toml")
+assert_eq "no duplicate multi_agent keys" "1" "$MULTI_COUNT"
+
+# Test 4: adding to existing config without [features]
 rm -rf "$HOME/.codex"
 mkdir -p "$HOME/.codex"
 echo '[model]
@@ -130,30 +145,23 @@ assert_contains "has consolidation" "CONSOLIDATION INSTRUCTIONS" "$PROMPT"
 
 # Without next.js/UI, should NOT have those agents
 PROMPT_NO_FRAMEWORK=$(build_review_prompt "reviews/test.md")
-if echo "$PROMPT_NO_FRAMEWORK" | grep -q "Next.js & React"; then
-  TESTS=$((TESTS + 1)); FAIL=$((FAIL + 1))
-  echo "  FAIL: next.js agent included without next project"
-else
-  TESTS=$((TESTS + 1)); PASS=$((PASS + 1))
-  echo "  PASS: next.js agent excluded without next project"
-fi
+assert_not_contains "next.js agent excluded" "Next.js & React" "$PROMPT_NO_FRAMEWORK"
 
 echo ""
 echo "=== write_runner_script ==="
 
-mkdir -p .claude
-echo "test prompt" > .claude/test-prompt.txt
-write_runner_script ".claude/test-prompt.txt" ".claude/test-runner.sh" "--sandbox" ".claude/test.log"
-assert_file_exists "runner script created" ".claude/test-runner.sh"
-assert_contains "runner is executable" "x" "$(stat -c %A .claude/test-runner.sh 2>/dev/null || stat -f %Sp .claude/test-runner.sh 2>/dev/null)"
-assert_contains "uses correct prompt file" ".claude/test-prompt.txt" "$(cat .claude/test-runner.sh)"
-assert_contains "uses correct log file" ".claude/test.log" "$(cat .claude/test-runner.sh)"
-assert_contains "uses correct flags" "--sandbox" "$(cat .claude/test-runner.sh)"
+mkdir -p .review-loop
+echo "test prompt" > .review-loop/test-prompt.txt
+write_runner_script ".review-loop/test-prompt.txt" ".review-loop/test-runner.sh" "--sandbox" ".review-loop/test.log"
+assert_file_exists "runner script created" ".review-loop/test-runner.sh"
+assert_contains "runner is executable" "x" "$(stat -c %A .review-loop/test-runner.sh 2>/dev/null || stat -f %Sp .review-loop/test-runner.sh 2>/dev/null)"
+assert_contains "uses correct prompt file" ".review-loop/test-prompt.txt" "$(cat .review-loop/test-runner.sh)"
+assert_contains "uses correct log file" ".review-loop/test.log" "$(cat .review-loop/test-runner.sh)"
+assert_contains "uses correct flags" "--sandbox" "$(cat .review-loop/test-runner.sh)"
 
 echo ""
 echo "=== source guard ==="
 
-# Sourcing again should be a no-op (guard prevents re-definition)
 assert_eq "guard var set" "1" "${_CODEX_REVIEW_LIB:-0}"
 
 echo ""
