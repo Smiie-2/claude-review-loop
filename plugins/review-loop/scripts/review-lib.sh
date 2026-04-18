@@ -145,7 +145,7 @@ ensure_reviewer_configured() {
 # ── Load a prompt template and substitute {{REVIEW_FILE}} ─────────────────
 # Args: $1 = template filename (under prompts/), $2 = REVIEW_FILE value
 _render_prompt() {
-  local name="$1" review_file="$2" path="${_REVIEW_PROMPTS_DIR}/$1"
+  local review_file="$2" path="${_REVIEW_PROMPTS_DIR}/$1"
   if [ ! -r "$path" ]; then
     echo "ERROR: prompt template missing: $path" >&2
     return 1
