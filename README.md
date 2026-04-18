@@ -181,6 +181,24 @@ plugins/review-loop/
 
 Execution logs are written to `.review-loop/review-loop.log` (for `/review-loop`) or `.review-loop/codex-review.log` (for `/codex-review`). These are gitignored.
 
+## Troubleshooting
+
+If a review looks stuck, fails silently, or produces no output, check the logs first:
+
+| Command | Log file |
+|---------|----------|
+| `/review-loop` | `.review-loop/review-loop.log` |
+| `/codex-review` | `.review-loop/codex-review.log` |
+
+Each log line is timestamped (UTC, ISO 8601) and records start/finish/exit-code/elapsed-seconds for every reviewer invocation. The reviewer's own stderr (Codex/Gemini API errors, auth failures, rate limits) streams to the terminal during execution — rerun the runner script manually if you need to re-capture it:
+
+```bash
+bash .review-loop/review-loop-runner.sh   # /review-loop
+bash .review-loop/codex-review-run.sh     # /codex-review
+```
+
+Active loop state lives in `.review-loop/state.json` (inspect with `jq . .review-loop/state.json`). Use `/cancel-review` to clear a stuck loop.
+
 ## Credits
 
 Original plugin by [Hamel Husain](https://github.com/hamelsmu/claude-review-loop). Inspired by the [Ralph Wiggum plugin](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum) and [Ryan Carson's compound engineering loop](https://x.com/ryancarson/article/2016520542723924279).
