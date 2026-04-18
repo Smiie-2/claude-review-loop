@@ -6,6 +6,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=./review-lib.sh
 source "$SCRIPT_DIR/review-lib.sh"
 
 PASS=0

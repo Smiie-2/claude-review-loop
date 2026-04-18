@@ -23,9 +23,11 @@ log() {
 trap 'log "ERROR: hook exited via ERR trap (line $LINENO)"; rm -f .review-loop/lock .review-loop/review-loop-runner.sh .review-loop/review-loop-prompt.txt .review-loop/review-loop-run-codex.sh .review-loop/review-loop-codex-prompt.txt .review-loop/retries; printf "{\"decision\":\"approve\"}\n"; exit 0' ERR
 
 # Source shared library (prompt building, project detection, reviewer dispatch)
+# shellcheck source=../scripts/review-lib.sh
 source "$(dirname "$0")/../scripts/review-lib.sh"
 
 # Consume stdin (hook input JSON) — must read to avoid broken pipe
+# shellcheck disable=SC2034  # value unused; reading it drains the pipe
 HOOK_INPUT=$(cat)
 
 STATE_FILE=".review-loop/state.md"
