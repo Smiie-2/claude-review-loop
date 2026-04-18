@@ -1,5 +1,7 @@
 # Review loop and codex review state (ephemeral, per-session)
 .review-loop/
+# …except the reviewer config, which IS project-committable
+!.review-loop/config.toml
 
 # Review artifacts (generated, not source)
 reviews/

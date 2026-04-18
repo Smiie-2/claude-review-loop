@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update -y && sudo apt-get install -y shellcheck
+      - name: Run shellcheck
+        run: |
+          set -e
+          # Lint every tracked *.sh file; -x follows `source` directives.
+          # Severity threshold: warning (suppresses style-only nitpicks).
+          files=$(git ls-files '*.sh')
+          if [ -z "$files" ]; then
+            echo "No shell scripts found"
+            exit 0
+          fi
+          echo "Linting:"
+          echo "$files"
+          # shellcheck disable=SC2086
+          shellcheck -x -S warning $files
+
+  test:
+    name: Plugin tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: sudo apt-get update -y && sudo apt-get install -y jq
+      - name: test-lib.sh
+        run: bash plugins/review-loop/scripts/test-lib.sh
+      - name: test-stop-hook.sh
+        run: bash plugins/review-loop/scripts/test-stop-hook.sh

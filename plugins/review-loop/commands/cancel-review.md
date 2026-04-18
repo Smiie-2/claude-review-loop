@@ -9,16 +9,16 @@ allowed-tools:
 Check if any review activity is active:
 
 ```bash
-test -f .review-loop/state.md && echo "REVIEW_LOOP_ACTIVE" || echo "REVIEW_LOOP_NONE"
+test -f .review-loop/state.json && echo "REVIEW_LOOP_ACTIVE" || echo "REVIEW_LOOP_NONE"
 test -f .review-loop/codex-review-run.sh && echo "CODEX_REVIEW_ACTIVE" || echo "CODEX_REVIEW_NONE"
 ```
 
-If a review loop is active, read `.review-loop/state.md` to get the current phase and review ID.
+If a review loop is active, read `.review-loop/state.json` (e.g. `jq . .review-loop/state.json`) to get the current phase and review ID.
 
-Then remove all state files, lock files, and generated Codex files:
+Then remove all state files, lock files, and generated reviewer files:
 
 ```bash
-rm -f .review-loop/state.md .review-loop/lock .review-loop/retries .review-loop/review-loop-run-codex.sh .review-loop/review-loop-codex-prompt.txt .review-loop/codex-review-run.sh .review-loop/codex-review-prompt.txt
+rm -f .review-loop/state.json .review-loop/state.md .review-loop/lock .review-loop/retries .review-loop/review-loop-runner.sh .review-loop/review-loop-prompt.txt .review-loop/review-loop-run-codex.sh .review-loop/review-loop-codex-prompt.txt .review-loop/codex-review-run.sh .review-loop/codex-review-prompt.txt
 ```
 
 Report what was cleaned up:
