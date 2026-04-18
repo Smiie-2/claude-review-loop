@@ -1,7 +1,7 @@
 {
   "name": "review-loop",
-  "version": "2.0.0",
-  "description": "Codex-powered code reviews: on-demand via /codex-review, or as a full implement-review-fix loop via /review-loop",
+  "version": "3.0.0",
+  "description": "Pluggable multi-agent code reviews (Codex or Gemini): on-demand via /codex-review, or as a full implement-review-fix loop via /review-loop",
   "author": {
     "name": "Smiie-2"
   },
