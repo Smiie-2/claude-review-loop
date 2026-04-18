@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Smoke tests for codex-review-lib.sh
+# Smoke tests for review-lib.sh
 #
 # Run from the repo root: bash plugins/review-loop/scripts/test-lib.sh
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/codex-review-lib.sh"
+source "$SCRIPT_DIR/review-lib.sh"
 
 PASS=0
 FAIL=0
@@ -162,7 +162,49 @@ assert_contains "uses correct flags" "--sandbox" "$(cat .review-loop/test-runner
 echo ""
 echo "=== source guard ==="
 
-assert_eq "guard var set" "1" "${_CODEX_REVIEW_LIB:-0}"
+assert_eq "guard var set" "1" "${_REVIEW_LIB:-0}"
+
+echo ""
+echo "=== get_reviewer ==="
+
+unset REVIEW_LOOP_REVIEWER
+# Default (no config, no env) → codex
+assert_eq "default reviewer" "codex" "$(get_reviewer)"
+
+# Env var override
+assert_eq "env var gemini" "gemini" "$(REVIEW_LOOP_REVIEWER=gemini get_reviewer)"
+
+# Unknown value falls back to codex
+assert_eq "unknown env falls back" "codex" "$(REVIEW_LOOP_REVIEWER=foo get_reviewer)"
+
+# Project config file
+mkdir -p .review-loop
+echo 'reviewer = "gemini"' > .review-loop/config.toml
+assert_eq "project config gemini" "gemini" "$(get_reviewer)"
+echo 'reviewer = "codex"' > .review-loop/config.toml
+assert_eq "project config codex" "codex" "$(get_reviewer)"
+rm -rf .review-loop
+
+echo ""
+echo "=== ensure_gemini_ready ==="
+OUTPUT=$(PATH=/nonexistent ensure_gemini_ready 2>&1) || true
+assert_contains "gemini not installed message" "not installed" "$OUTPUT"
+
+echo ""
+echo "=== default_reviewer_flags ==="
+assert_contains "codex default flags" "dangerously-bypass" "$(default_reviewer_flags codex)"
+assert_eq "gemini default flags" "--yolo" "$(default_reviewer_flags gemini)"
+assert_eq "codex env override" "--custom" "$(REVIEW_LOOP_CODEX_FLAGS=--custom default_reviewer_flags codex)"
+assert_eq "gemini env override" "--custom" "$(REVIEW_LOOP_GEMINI_FLAGS=--custom default_reviewer_flags gemini)"
+
+echo ""
+echo "=== write_runner_script: gemini variant ==="
+mkdir -p .review-loop
+echo "prompt" > .review-loop/g-prompt.txt
+write_runner_script ".review-loop/g-prompt.txt" ".review-loop/g-runner.sh" "--yolo" ".review-loop/g.log" "gemini"
+assert_contains "gemini runner invokes gemini" "gemini " "$(cat .review-loop/g-runner.sh)"
+assert_contains "gemini runner has yolo flag" "--yolo" "$(cat .review-loop/g-runner.sh)"
+assert_contains "gemini runner records reviewer" 'REVIEWER="gemini"' "$(cat .review-loop/g-runner.sh)"
 
 echo ""
 echo "==============================="

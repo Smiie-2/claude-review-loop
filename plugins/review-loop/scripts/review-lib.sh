@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# codex-review-lib.sh — Shared functions for Codex multi-agent review
+# review-lib.sh — Shared functions for multi-agent code review
 #
+# Supports pluggable reviewers: Codex (default) and Gemini.
 # Sourced by stop-hook.sh and the /codex-review command.
 # Contains only function definitions — no side effects on source.
 
-[[ -n "${_CODEX_REVIEW_LIB:-}" ]] && return 0
-_CODEX_REVIEW_LIB=1
+[[ -n "${_REVIEW_LIB:-}" ]] && return 0
+_REVIEW_LIB=1
 
 # ── Project type detection ────────────────────────────────────────────────
 detect_nextjs() {
@@ -18,8 +19,35 @@ detect_browser_ui() {
     [ -d "public" ] || [ -f "index.html" ]
 }
 
-# ── Validate Codex CLI is installed ───────────────────────────────────────
-# Returns 0 on success, 1 on failure. Writes error message to stdout on failure.
+# ── Reviewer selection ────────────────────────────────────────────────────
+# Resolution order:
+#   1. REVIEW_LOOP_REVIEWER env var
+#   2. .review-loop/config.toml          (per-project override)
+#   3. ~/.config/review-loop/config.toml (global)
+#   4. Default: codex
+# Unknown values fall back to codex.
+get_reviewer() {
+  local reviewer="" src=""
+  if [ -n "${REVIEW_LOOP_REVIEWER:-}" ]; then
+    reviewer="$REVIEW_LOOP_REVIEWER"
+  elif [ -f ".review-loop/config.toml" ]; then
+    src=".review-loop/config.toml"
+  elif [ -f "${HOME}/.config/review-loop/config.toml" ]; then
+    src="${HOME}/.config/review-loop/config.toml"
+  fi
+
+  if [ -n "$src" ]; then
+    reviewer=$(sed -n 's/^[[:space:]]*reviewer[[:space:]]*=[[:space:]]*"\{0,1\}\([a-zA-Z0-9_-]*\)"\{0,1\}.*/\1/p' "$src" | head -1)
+  fi
+
+  case "$reviewer" in
+    codex|gemini) echo "$reviewer" ;;
+    *) echo "codex" ;;
+  esac
+}
+
+# ── CLI availability checks ───────────────────────────────────────────────
+# Each writes an install hint to stdout on failure. Return 0 on success.
 ensure_codex_ready() {
   if ! command -v codex &> /dev/null; then
     echo "Codex CLI is not installed. Install it: npm install -g @openai/codex"
@@ -28,22 +56,39 @@ ensure_codex_ready() {
   return 0
 }
 
+ensure_gemini_ready() {
+  if ! command -v gemini &> /dev/null; then
+    echo "Gemini CLI is not installed. Install it: npm install -g @google/gemini-cli"
+    return 1
+  fi
+  return 0
+}
+
+# Dispatcher: validates the currently-selected reviewer.
+# Args: $1 = reviewer name (codex|gemini)
+ensure_reviewer_ready() {
+  local reviewer="$1"
+  case "$reviewer" in
+    codex)  ensure_codex_ready  ;;
+    gemini) ensure_gemini_ready ;;
+    *) echo "Unknown reviewer: $reviewer (expected: codex|gemini)"; return 1 ;;
+  esac
+}
+
 # ── Ensure multi-agent is configured in ~/.codex/config.toml ─────────────
+# Codex-only — Gemini CLI has no equivalent multi-agent config flag.
 # Auto-configures if missing or set to false. Returns 0 on success.
 # Handles macOS/Linux sed -i differences.
 ensure_multi_agent_configured() {
   local CODEX_CONFIG="${HOME}/.codex/config.toml"
 
   if [ ! -f "$CODEX_CONFIG" ]; then
-    # No config file — create with multi_agent enabled
     mkdir -p "${HOME}/.codex"
     printf '[features]\nmulti_agent = true\n' > "$CODEX_CONFIG"
     echo "Created ~/.codex/config.toml with multi_agent enabled"
   elif grep -qE '^\s*multi_agent\s*=\s*true' "$CODEX_CONFIG"; then
-    # Already enabled — nothing to do
     :
   elif grep -qE '^\s*multi_agent\s*=' "$CODEX_CONFIG"; then
-    # Key exists but is not true (e.g. false) — rewrite in place
     if [ "$(uname)" = "Darwin" ]; then
       sed -i '' 's/^\([[:space:]]*\)multi_agent[[:space:]]*=.*/\1multi_agent = true/' "$CODEX_CONFIG"
     else
@@ -51,7 +96,6 @@ ensure_multi_agent_configured() {
     fi
     echo "Updated multi_agent to true in ~/.codex/config.toml"
   elif grep -qE '^\[features\]' "$CODEX_CONFIG"; then
-    # [features] section exists but no multi_agent key — append under it
     if [ "$(uname)" = "Darwin" ]; then
       sed -i '' '/^\[features\]/a\'$'\n''multi_agent = true' "$CODEX_CONFIG"
     else
@@ -59,15 +103,30 @@ ensure_multi_agent_configured() {
     fi
     echo "Enabled multi_agent in ~/.codex/config.toml"
   else
-    # No [features] section at all — append it
     printf '\n[features]\nmulti_agent = true\n' >> "$CODEX_CONFIG"
     echo "Enabled multi_agent in ~/.codex/config.toml"
   fi
   return 0
 }
 
+# Dispatcher: configures the selected reviewer if it needs setup.
+# Args: $1 = reviewer name
+ensure_reviewer_configured() {
+  local reviewer="$1"
+  case "$reviewer" in
+    codex)  ensure_multi_agent_configured ;;
+    gemini) : ;;  # no equivalent config step
+    *) echo "Unknown reviewer: $reviewer"; return 1 ;;
+  esac
+}
+
 # ── Build the multi-agent review prompt ───────────────────────────────────
-# Args: $1 = REVIEW_FILE path (where Codex should write the consolidated review)
+# Args: $1 = REVIEW_FILE path (where the reviewer should write the consolidated review)
+#
+# The prompt is reviewer-agnostic. Both Codex (via the `multi_agent` config
+# feature) and Gemini CLI v0.38+ (via its subagent runtime / skills + @-syntax)
+# support spawning parallel review agents; each runtime maps the prompt to its
+# own parallel-execution primitives. The consolidated output is identical.
 build_review_prompt() {
   local REVIEW_FILE="$1"
 
@@ -79,9 +138,9 @@ build_review_prompt() {
   cat << PREAMBLE_EOF
 You are orchestrating a thorough, independent code review of recent changes in this repository.
 
-Use multi-agent to run the following review agents IN PARALLEL. Each agent should return its findings as structured text (not write to files). After ALL agents complete, consolidate their findings into a single deduplicated review file.
+Spawn parallel sub-agents for the review paths below using whatever parallel-agent primitive your runtime provides (Codex: multi_agent; Gemini: subagent runtime / @agent dispatch). If parallel sub-agents are unavailable, run each review pass sequentially in the same session. Each agent/pass should collect its findings as structured text. After ALL agents complete, consolidate their findings into a single deduplicated review file.
 
-IMPORTANT: Spawn one agent per review path below. Wait for all agents to finish. Then deduplicate overlapping findings and write the consolidated review to: ${REVIEW_FILE}
+IMPORTANT: Run one agent per review path below. Wait for all agents to finish. Then deduplicate overlapping findings and write the consolidated review to: ${REVIEW_FILE}
 
 PREAMBLE_EOF
 
@@ -248,17 +307,47 @@ IMPORTANT: You MUST create the file ${REVIEW_FILE} with the full review.
 CONSOLIDATION_EOF
 }
 
-# ── Write the Codex runner script ─────────────────────────────────────────
-# Args: $1 = PROMPT_FILE, $2 = RUNNER_SCRIPT, $3 = CODEX_FLAGS, $4 = LOG_FILE (optional)
+# ── Default CLI flags for the selected reviewer ───────────────────────────
+# Honors REVIEW_LOOP_CODEX_FLAGS / REVIEW_LOOP_GEMINI_FLAGS overrides.
+default_reviewer_flags() {
+  local reviewer="$1"
+  case "$reviewer" in
+    gemini)  echo "${REVIEW_LOOP_GEMINI_FLAGS:---yolo}" ;;
+    codex|*) echo "${REVIEW_LOOP_CODEX_FLAGS:---dangerously-bypass-approvals-and-sandbox}" ;;
+  esac
+}
+
+# ── Write the reviewer runner script ──────────────────────────────────────
+# Args:
+#   $1 = PROMPT_FILE
+#   $2 = RUNNER_SCRIPT
+#   $3 = REVIEWER_FLAGS  (CLI flags for the selected reviewer)
+#   $4 = LOG_FILE        (optional, default .review-loop/review-loop.log)
+#   $5 = REVIEWER        (optional, default "codex")
 write_runner_script() {
   local PROMPT_FILE="$1"
   local RUNNER_SCRIPT="$2"
-  local CODEX_FLAGS="$3"
+  local REVIEWER_FLAGS="$3"
   local LOG_FILE="${4:-.review-loop/review-loop.log}"
+  local REVIEWER="${5:-codex}"
+
+  local INVOKE_LINE
+  case "$REVIEWER" in
+    gemini)
+      local GEMINI_MODEL="${REVIEW_LOOP_GEMINI_MODEL:-}"
+      local MODEL_FLAG=""
+      [ -n "$GEMINI_MODEL" ] && MODEL_FLAG="-m ${GEMINI_MODEL}"
+      INVOKE_LINE="gemini ${MODEL_FLAG} ${REVIEWER_FLAGS} -p \"\$(cat \"\$PROMPT_FILE\")\""
+      ;;
+    codex|*)
+      INVOKE_LINE="codex ${REVIEWER_FLAGS} exec \"\$(cat \"\$PROMPT_FILE\")\""
+      ;;
+  esac
 
   cat > "$RUNNER_SCRIPT" << RUNNER_EOF
 #!/usr/bin/env bash
 LOG_FILE="${LOG_FILE}"
+REVIEWER="${REVIEWER}"
 log() { echo "[\$(date -u +"%Y-%m-%dT%H:%M:%SZ")] \$*" >> "\$LOG_FILE"; }
 
 PROMPT_FILE="${PROMPT_FILE}"
@@ -267,16 +356,16 @@ if [ ! -f "\$PROMPT_FILE" ]; then
   exit 1
 fi
 
-log "Starting Codex multi-agent review"
+log "Starting \${REVIEWER} multi-agent review"
 START_TIME=\$(date +%s)
 
 # shellcheck disable=SC2086
-codex ${CODEX_FLAGS} exec "\$(cat "\$PROMPT_FILE")" || CODEX_EXIT=\$?
-CODEX_EXIT=\${CODEX_EXIT:-0}
+${INVOKE_LINE} || REVIEWER_EXIT=\$?
+REVIEWER_EXIT=\${REVIEWER_EXIT:-0}
 
 ELAPSED=\$(( \$(date +%s) - START_TIME ))
-log "Codex finished (exit=\$CODEX_EXIT, elapsed=\${ELAPSED}s)"
-exit \$CODEX_EXIT
+log "\${REVIEWER} finished (exit=\$REVIEWER_EXIT, elapsed=\${ELAPSED}s)"
+exit \$REVIEWER_EXIT
 RUNNER_EOF
   chmod +x "$RUNNER_SCRIPT"
 }

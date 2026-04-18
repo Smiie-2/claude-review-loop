@@ -122,8 +122,8 @@ reset_tmpdir
 write_state "task" "$VALID_ID"
 RESULT=$(run_hook)
 assert_decision "task → block" "block" "$RESULT"
-assert_file_exists "runner script created" ".review-loop/review-loop-run-codex.sh"
-assert_file_exists "prompt file created" ".review-loop/review-loop-codex-prompt.txt"
+assert_file_exists "runner script created" ".review-loop/review-loop-runner.sh"
+assert_file_exists "prompt file created" ".review-loop/review-loop-prompt.txt"
 
 echo ""
 echo "=== Task phase clears stale retries ==="
@@ -149,7 +149,7 @@ echo "=== Addressing without review, first attempt → block ==="
 reset_tmpdir
 write_state "addressing" "$VALID_ID"
 mkdir -p "$TMPDIR/.review-loop"
-touch "$TMPDIR/.review-loop/review-loop-run-codex.sh"
+touch "$TMPDIR/.review-loop/review-loop-runner.sh"
 RESULT=$(run_hook)
 assert_decision "addressing no review, try 1 → block" "block" "$RESULT"
 assert_file_exists "retry file created" ".review-loop/retries"
@@ -159,7 +159,7 @@ echo "=== Addressing without review, second attempt → approve (fail-open) ==="
 reset_tmpdir
 write_state "addressing" "$VALID_ID"
 mkdir -p "$TMPDIR/.review-loop"
-touch "$TMPDIR/.review-loop/review-loop-run-codex.sh"
+touch "$TMPDIR/.review-loop/review-loop-runner.sh"
 echo "1" > "$TMPDIR/.review-loop/retries"
 RESULT=$(run_hook)
 assert_decision "addressing no review, try 2 → approve" "approve" "$RESULT"

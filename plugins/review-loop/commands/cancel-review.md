@@ -18,7 +18,7 @@ If a review loop is active, read `.review-loop/state.md` to get the current phas
 Then remove all state files, lock files, and generated Codex files:
 
 ```bash
-rm -f .review-loop/state.md .review-loop/lock .review-loop/retries .review-loop/review-loop-run-codex.sh .review-loop/review-loop-codex-prompt.txt .review-loop/codex-review-run.sh .review-loop/codex-review-prompt.txt
+rm -f .review-loop/state.md .review-loop/lock .review-loop/retries .review-loop/review-loop-runner.sh .review-loop/review-loop-prompt.txt .review-loop/review-loop-run-codex.sh .review-loop/review-loop-codex-prompt.txt .review-loop/codex-review-run.sh .review-loop/codex-review-prompt.txt
 ```
 
 Report what was cleaned up:
