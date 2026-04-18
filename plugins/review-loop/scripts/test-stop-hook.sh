@@ -16,19 +16,28 @@ TESTS=0
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
-# Isolate HOME so ensure_multi_agent_configured doesn't touch the real user's
-# ~/.codex/config.toml, and stub a codex binary on PATH so the hook's
-# reviewer-availability check passes without needing the real CLI installed.
-# The stop-hook expects /review-loop to have already enabled multi_agent.
-export HOME="$TMPDIR/home"
-mkdir -p "$HOME/.codex" "$TMPDIR/bin"
-printf '[features]\nmulti_agent = true\n' > "$HOME/.codex/config.toml"
-cat > "$TMPDIR/bin/codex" << 'STUB'
+# Save the original PATH so reset_tmpdir can re-prefix TMPDIR/bin onto a
+# clean base each time (otherwise the PATH accretes stale deleted dirs).
+_ORIG_PATH="$PATH"
+
+# Provisioning helper: isolate HOME under TMPDIR so
+# ensure_multi_agent_configured doesn't touch the real user's
+# ~/.codex/config.toml, pre-create the multi_agent config that /review-loop
+# would have written, and stub a codex binary so the reviewer-availability
+# check passes without needing the real CLI installed.
+_provision_stubs() {
+  export HOME="$TMPDIR/home"
+  mkdir -p "$HOME/.codex" "$TMPDIR/bin"
+  printf '[features]\nmulti_agent = true\n' > "$HOME/.codex/config.toml"
+  cat > "$TMPDIR/bin/codex" << 'STUB'
 #!/usr/bin/env bash
 exit 0
 STUB
-chmod +x "$TMPDIR/bin/codex"
-export PATH="$TMPDIR/bin:$PATH"
+  chmod +x "$TMPDIR/bin/codex"
+  export PATH="$TMPDIR/bin:$_ORIG_PATH"
+}
+
+_provision_stubs
 
 run_hook() {
   # Run the stop hook in the temp dir, piping empty JSON as hook input
@@ -77,16 +86,7 @@ assert_file_missing() {
 reset_tmpdir() {
   rm -rf "$TMPDIR"
   TMPDIR="$(mktemp -d)"
-  # Re-plant stubs wiped by the rm -rf. The hook expects /review-loop to
-  # have already prepared the codex multi_agent config, so pre-create it.
-  export HOME="$TMPDIR/home"
-  mkdir -p "$HOME/.codex" "$TMPDIR/bin"
-  printf '[features]\nmulti_agent = true\n' > "$HOME/.codex/config.toml"
-  cat > "$TMPDIR/bin/codex" << 'STUB'
-#!/usr/bin/env bash
-exit 0
-STUB
-  chmod +x "$TMPDIR/bin/codex"
+  _provision_stubs
 }
 
 write_state() {
