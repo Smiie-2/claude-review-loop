@@ -20,7 +20,7 @@ log() {
   echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" >> "$LOG_FILE"
 }
 
-trap 'log "ERROR: hook exited via ERR trap (line $LINENO)"; rm -f .review-loop/lock .review-loop/review-loop-runner.sh .review-loop/review-loop-prompt.txt .review-loop/retries; printf "{\"decision\":\"approve\"}\n"; exit 0' ERR
+trap 'log "ERROR: hook exited via ERR trap (line $LINENO)"; rm -f .review-loop/lock .review-loop/review-loop-runner.sh .review-loop/review-loop-prompt.txt .review-loop/review-loop-run-codex.sh .review-loop/review-loop-codex-prompt.txt .review-loop/retries; printf "{\"decision\":\"approve\"}\n"; exit 0' ERR
 
 # Source shared library (prompt building, project detection, reviewer dispatch)
 source "$(dirname "$0")/../scripts/review-lib.sh"

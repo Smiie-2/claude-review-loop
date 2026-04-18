@@ -183,7 +183,44 @@ echo 'reviewer = "gemini"' > .review-loop/config.toml
 assert_eq "project config gemini" "gemini" "$(get_reviewer)"
 echo 'reviewer = "codex"' > .review-loop/config.toml
 assert_eq "project config codex" "codex" "$(get_reviewer)"
+
+# Tolerant TOML parsing: trailing comment
+printf 'reviewer = "gemini"  # use gemini\n' > .review-loop/config.toml
+assert_eq "config with trailing comment" "gemini" "$(get_reviewer)"
+
+# Bare unquoted value
+printf 'reviewer = gemini\n' > .review-loop/config.toml
+assert_eq "config bare value" "gemini" "$(get_reviewer)"
+
+# Single-quoted value
+printf "reviewer = 'gemini'\n" > .review-loop/config.toml
+assert_eq "config single-quoted" "gemini" "$(get_reviewer)"
+
+# Comments and blank lines before key
+printf '# preamble\n\n[section]\nreviewer = "gemini"\n' > .review-loop/config.toml
+assert_eq "config with preamble" "gemini" "$(get_reviewer)"
+
+# Commented-out reviewer line must be ignored → falls back to default
+printf '# reviewer = "gemini"\n' > .review-loop/config.toml
+assert_eq "config commented reviewer → default" "codex" "$(get_reviewer)"
+
 rm -rf .review-loop
+
+# Global config file (HOME is already fakehome)
+mkdir -p "$HOME/.config/review-loop"
+printf 'reviewer = "gemini"\n' > "$HOME/.config/review-loop/config.toml"
+assert_eq "global config gemini" "gemini" "$(get_reviewer)"
+
+# Project config overrides global
+mkdir -p .review-loop
+printf 'reviewer = "codex"\n' > .review-loop/config.toml
+assert_eq "project overrides global" "codex" "$(get_reviewer)"
+rm -rf .review-loop
+
+# Env var overrides both
+assert_eq "env var overrides global config" "codex" "$(REVIEW_LOOP_REVIEWER=codex get_reviewer)"
+
+rm -rf "$HOME/.config"
 
 echo ""
 echo "=== ensure_gemini_ready ==="

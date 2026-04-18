@@ -37,6 +37,9 @@ ensure_reviewer_configured "$REVIEWER"
 
 REVIEW_FILE="reviews/review-${REVIEW_ID}.md"
 REVIEWER_FLAGS=$(default_reviewer_flags "$REVIEWER")
+# Temp file names are prefixed by the *command* (`codex-review-`), not the
+# reviewer — this keeps them distinct from /review-loop's `review-loop-*`
+# files regardless of which reviewer is active.
 PROMPT_FILE=".review-loop/codex-review-prompt.txt"
 RUNNER_SCRIPT=".review-loop/codex-review-run.sh"
 

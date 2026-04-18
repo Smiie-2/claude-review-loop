@@ -13,7 +13,40 @@ allowed-tools:
 First, set up the review loop by running this setup command:
 
 ```bash
-set -e && REVIEW_ID="$(date +%Y%m%d-%H%M%S)-$(openssl rand -hex 3 2>/dev/null || head -c 3 /dev/urandom | od -An -tx1 | tr -d ' \n')" && mkdir -p .review-loop reviews && if [ -f .review-loop/state.md ]; then echo "Error: A review loop is already active. Use /cancel-review first." && exit 1; fi && LIB_PATH="$(find "$HOME/.claude/plugins" -path '*/review-loop/scripts/review-lib.sh' 2>/dev/null | head -1)" && if [ -z "$LIB_PATH" ]; then LIB_PATH="$(find "$HOME/.claude" -path '*/review-loop/scripts/review-lib.sh' 2>/dev/null | head -1)"; fi && if [ -z "$LIB_PATH" ] || [ ! -r "$LIB_PATH" ]; then echo "Error: Could not find review-lib.sh. Is the review-loop plugin installed?"; exit 1; fi && source "$LIB_PATH" && REVIEWER=$(get_reviewer) && REVIEWER_ERROR=$(ensure_reviewer_ready "$REVIEWER" 2>&1) || { echo "Error: $REVIEWER_ERROR"; exit 1; } && ensure_reviewer_configured "$REVIEWER" && rm -f .review-loop/lock .review-loop/retries && cat > .review-loop/state.md << STATE_EOF
+set -e
+
+# Fail early if a review loop is already in progress.
+if [ -f .review-loop/state.md ]; then
+  echo "Error: A review loop is already active. Use /cancel-review first."
+  exit 1
+fi
+
+# Locate the plugin's shared library (cross-platform: $HOME not ~).
+LIB_PATH="$(find "$HOME/.claude/plugins" -path '*/review-loop/scripts/review-lib.sh' 2>/dev/null | head -1)"
+if [ -z "$LIB_PATH" ]; then
+  LIB_PATH="$(find "$HOME/.claude" -path '*/review-loop/scripts/review-lib.sh' 2>/dev/null | head -1)"
+fi
+if [ -z "$LIB_PATH" ] || [ ! -r "$LIB_PATH" ]; then
+  echo "Error: Could not find review-lib.sh. Is the review-loop plugin installed?"
+  exit 1
+fi
+# shellcheck source=/dev/null
+source "$LIB_PATH"
+
+# Resolve and validate the reviewer (codex|gemini).
+REVIEWER=$(get_reviewer)
+if ! REVIEWER_ERROR=$(ensure_reviewer_ready "$REVIEWER" 2>&1); then
+  echo "Error: $REVIEWER_ERROR"
+  exit 1
+fi
+ensure_reviewer_configured "$REVIEWER"
+
+# Generate a unique review ID and prepare state directory.
+REVIEW_ID="$(date +%Y%m%d-%H%M%S)-$(openssl rand -hex 3 2>/dev/null || head -c 3 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+mkdir -p .review-loop reviews
+rm -f .review-loop/lock .review-loop/retries
+
+cat > .review-loop/state.md << STATE_EOF
 ---
 active: true
 phase: task
@@ -23,6 +56,7 @@ started_at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 $ARGUMENTS
 STATE_EOF
+
 echo "Review Loop activated (reviewer=${REVIEWER}, ID: ${REVIEW_ID})"
 ```
 

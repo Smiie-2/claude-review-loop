@@ -37,9 +37,26 @@ get_reviewer() {
   fi
 
   if [ -n "$src" ]; then
-    reviewer=$(sed -n 's/^[[:space:]]*reviewer[[:space:]]*=[[:space:]]*"\{0,1\}\([a-zA-Z0-9_-]*\)"\{0,1\}.*/\1/p' "$src" | head -1)
+    # Tolerant TOML parse: skip blank/comment lines; strip trailing '# comment';
+    # accept reviewer = "x", 'x', or bare x; ignore surrounding whitespace.
+    reviewer=$(awk '
+      /^[[:space:]]*#/    { next }
+      /^[[:space:]]*$/    { next }
+      /^[[:space:]]*reviewer[[:space:]]*=/ {
+        sub(/^[^=]*=[[:space:]]*/, "")
+        sub(/[[:space:]]*#.*$/, "")
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "")
+        gsub(/^["\x27]|["\x27]$/, "")
+        print
+        exit
+      }
+    ' "$src")
   fi
 
+  # Unknown values fall back to codex rather than fallthrough to the next
+  # resolution source — a typo in the project config should be obvious
+  # (everything falls back to codex) rather than silently promoted by
+  # whichever global config happens to exist.
   case "$reviewer" in
     codex|gemini) echo "$reviewer" ;;
     *) echo "codex" ;;
@@ -309,6 +326,9 @@ CONSOLIDATION_EOF
 
 # ── Default CLI flags for the selected reviewer ───────────────────────────
 # Honors REVIEW_LOOP_CODEX_FLAGS / REVIEW_LOOP_GEMINI_FLAGS overrides.
+# `--yolo` (gemini) and `--dangerously-bypass-approvals-and-sandbox` (codex)
+# both disable all approval prompts so the reviewer can run unattended. Users
+# who want sandboxed/interactive reviews should override via the env vars.
 default_reviewer_flags() {
   local reviewer="$1"
   case "$reviewer" in
@@ -324,6 +344,11 @@ default_reviewer_flags() {
 #   $3 = REVIEWER_FLAGS  (CLI flags for the selected reviewer)
 #   $4 = LOG_FILE        (optional, default .review-loop/review-loop.log)
 #   $5 = REVIEWER        (optional, default "codex")
+#
+# Note: reviewer, flags, and model are baked into the generated script at
+# generation time (not at execution time). Changing REVIEW_LOOP_* env vars
+# after setup has no effect on an already-written runner — regenerate to pick
+# up new values.
 write_runner_script() {
   local PROMPT_FILE="$1"
   local RUNNER_SCRIPT="$2"
@@ -336,7 +361,8 @@ write_runner_script() {
     gemini)
       local GEMINI_MODEL="${REVIEW_LOOP_GEMINI_MODEL:-}"
       local MODEL_FLAG=""
-      [ -n "$GEMINI_MODEL" ] && MODEL_FLAG="-m ${GEMINI_MODEL}"
+      # Quote the model value so a name containing spaces doesn't split the arg.
+      [ -n "$GEMINI_MODEL" ] && MODEL_FLAG="-m \"${GEMINI_MODEL}\""
       INVOKE_LINE="gemini ${MODEL_FLAG} ${REVIEWER_FLAGS} -p \"\$(cat \"\$PROMPT_FILE\")\""
       ;;
     codex|*)
