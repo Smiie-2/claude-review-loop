@@ -63,7 +63,14 @@ reviewer = "gemini"
 
 - Run `bash scripts/test-lib.sh` to test shared library functions (includes reviewer-selection + gemini runner coverage)
 - Run `bash scripts/test-stop-hook.sh` to test stop-hook state machine
+- `test-stop-hook.sh` stubs `codex` on PATH and isolates `$HOME/.codex/config.toml` because CI has no real reviewer CLI. Preserve `_ORIG_PATH` across `reset_tmpdir` — the `rm -rf` wipes the stub dir but PATH still points to it, so always re-prefix as `$TMPDIR/bin:$_ORIG_PATH`, never `$TMPDIR/bin:$PATH`.
 - After modifying stop-hook.sh, test all paths: no-state, task→block, addressing-without-review→block, addressing-with-review→approve
 - Verify JSON output with `jq .` for each path
 - Test with the selected reviewer unavailable (should block with install instructions)
 - Test with malformed state files (should fail-open)
+- CI (`.github/workflows/ci.yml`) runs `shellcheck -x -S warning` on every tracked `*.sh` and both test suites on PRs and main pushes.
+
+## Releasing
+
+- Bump `.claude-plugin/plugin.json` version on every shipping change — the Claude Code plugin updater is a no-op if the version is unchanged, even after `claude plugin marketplace update`.
+- After `claude plugin update`, Claude Code must be restarted for the new version to take effect (`claude plugin list` keeps showing the old version until restart).
