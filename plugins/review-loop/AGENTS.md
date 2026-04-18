@@ -30,7 +30,8 @@ reviewer = "gemini"
 
 ## Architecture
 
-- `scripts/review-lib.sh` — Shared library (sourced, not executed). Contains reviewer dispatch (`get_reviewer`, `ensure_reviewer_ready`, `ensure_reviewer_configured`, `default_reviewer_flags`), project detection (`detect_nextjs`, `detect_browser_ui`), prompt builder (`build_review_prompt`), runner generator (`write_runner_script`), and reviewer-specific helpers (`ensure_codex_ready`, `ensure_gemini_ready`, `ensure_multi_agent_configured`).
+- `scripts/review-lib.sh` — Shared library (sourced, not executed). Contains reviewer dispatch (`get_reviewer`, `ensure_reviewer_ready`, `ensure_reviewer_configured`, `default_reviewer_flags`), project detection (`detect_nextjs`, `detect_browser_ui`), prompt builder (`build_review_prompt`, `_render_prompt`), runner generator (`write_runner_script`), and reviewer-specific helpers (`ensure_codex_ready`, `ensure_gemini_ready`, `ensure_multi_agent_configured`).
+- `prompts/` — Multi-agent review prompt templates (`preamble.md`, `agent-diff.md`, `agent-holistic.md`, `agent-nextjs.md`, `agent-ux.md`, `consolidation.md`). Placeholder `{{REVIEW_FILE}}` is substituted at render time. Edit these instead of touching the lib to tune review prompts.
 - `hooks/stop-hook.sh` — Stop hook for `/review-loop` phase management. Sources the shared library.
 - `commands/codex-review.md` — On-demand review command. Sources the shared library via cross-platform `find`. (Command name kept as `/codex-review` for stability; it runs whichever reviewer is configured.)
 - `commands/review-loop.md` — Locked workflow command.
