@@ -30,7 +30,7 @@ source "$(dirname "$0")/../scripts/review-lib.sh"
 # shellcheck disable=SC2034  # value unused; reading it drains the pipe
 HOOK_INPUT=$(cat)
 
-STATE_FILE=".review-loop/state.md"
+STATE_FILE=".review-loop/state.json"
 
 # No active loop → allow exit
 if [ ! -f "$STATE_FILE" ]; then
@@ -38,9 +38,9 @@ if [ ! -f "$STATE_FILE" ]; then
   exit 0
 fi
 
-# Parse a field from the YAML frontmatter
+# Parse a top-level field from the JSON state file.
 parse_field() {
-  sed -n "s/^${1}: *//p" "$STATE_FILE" | head -1
+  jq -r --arg k "$1" '.[$k] // ""' "$STATE_FILE" 2>/dev/null
 }
 
 ACTIVE=$(parse_field "active")
@@ -62,15 +62,16 @@ if ! echo "$REVIEW_ID" | grep -qE '^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$'; then
   exit 0
 fi
 
-# ── Rewrite state file to update phase (atomic, no fragile sed regex) ──────
+# ── Rewrite state file to update phase (atomic jq write) ───────────────────
 transition_phase() {
   local new_phase="$1"
   local TEMP_FILE="${STATE_FILE}.tmp.$$"
 
-  awk -v np="$new_phase" '{
-    if ($0 ~ /^phase:/) { print "phase: " np }
-    else { print }
-  }' "$STATE_FILE" > "$TEMP_FILE"
+  if ! jq --arg p "$new_phase" '.phase = $p' "$STATE_FILE" > "$TEMP_FILE" 2>/dev/null; then
+    rm -f "$TEMP_FILE"
+    log "ERROR: jq rewrite failed during phase transition"
+    return 1
+  fi
 
   mv "$TEMP_FILE" "$STATE_FILE"
 

@@ -16,7 +16,7 @@ First, set up the review loop by running this setup command:
 set -e
 
 # Fail early if a review loop is already in progress.
-if [ -f .review-loop/state.md ]; then
+if [ -f .review-loop/state.json ]; then
   echo "Error: A review loop is already active. Use /cancel-review first."
   exit 1
 fi
@@ -46,16 +46,12 @@ REVIEW_ID="$(date +%Y%m%d-%H%M%S)-$(openssl rand -hex 3 2>/dev/null || head -c 3
 mkdir -p .review-loop reviews
 rm -f .review-loop/lock .review-loop/retries
 
-cat > .review-loop/state.md << STATE_EOF
----
-active: true
-phase: task
-review_id: ${REVIEW_ID}
-started_at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
----
-
-$ARGUMENTS
-STATE_EOF
+jq -n \
+  --arg rid "$REVIEW_ID" \
+  --arg t   "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+  --arg task "$ARGUMENTS" \
+  '{active: true, phase: "task", review_id: $rid, started_at: $t, task: $task}' \
+  > .review-loop/state.json
 
 echo "Review Loop activated (reviewer=${REVIEWER}, ID: ${REVIEW_ID})"
 ```

@@ -68,15 +68,11 @@ reset_tmpdir() {
 write_state() {
   local phase="$1" review_id="$2"
   mkdir -p "$TMPDIR/.review-loop"
-  cat > "$TMPDIR/.review-loop/state.md" << EOF
----
-active: true
-phase: $phase
-review_id: $review_id
-started_at: 2026-03-31T12:00:00Z
----
-test task
-EOF
+  jq -n \
+    --arg phase "$phase" \
+    --arg rid "$review_id" \
+    '{active:true, phase:$phase, review_id:$rid, started_at:"2026-03-31T12:00:00Z", task:"test task"}' \
+    > "$TMPDIR/.review-loop/state.json"
 }
 
 VALID_ID="20260331-120000-abc123"
@@ -90,31 +86,19 @@ echo ""
 echo "=== Inactive state → approve + cleanup ==="
 reset_tmpdir
 mkdir -p "$TMPDIR/.review-loop"
-cat > "$TMPDIR/.review-loop/state.md" << 'EOF'
----
-active: false
-phase: task
-review_id: 20260331-120000-abc123
----
-EOF
+jq -n '{active:false, phase:"task", review_id:"20260331-120000-abc123", started_at:"2026-03-31T12:00:00Z", task:"test"}' > "$TMPDIR/.review-loop/state.json"
 RESULT=$(run_hook)
 assert_decision "inactive → approve" "approve" "$RESULT"
-assert_file_missing "state cleaned up" ".review-loop/state.md"
+assert_file_missing "state cleaned up" ".review-loop/state.json"
 
 echo ""
 echo "=== Invalid review_id → approve (fail-open) ==="
 reset_tmpdir
 mkdir -p "$TMPDIR/.review-loop"
-cat > "$TMPDIR/.review-loop/state.md" << 'EOF'
----
-active: true
-phase: task
-review_id: ../../etc/passwd
----
-EOF
+jq -n '{active:true, phase:"task", review_id:"../../etc/passwd", started_at:"2026-03-31T12:00:00Z", task:"test"}' > "$TMPDIR/.review-loop/state.json"
 RESULT=$(run_hook)
 assert_decision "invalid id → approve" "approve" "$RESULT"
-assert_file_missing "state cleaned up" ".review-loop/state.md"
+assert_file_missing "state cleaned up" ".review-loop/state.json"
 
 echo ""
 echo "=== Task phase → block + runner script created ==="
@@ -142,7 +126,7 @@ mkdir -p "$TMPDIR/reviews"
 echo "review content" > "$TMPDIR/reviews/review-${VALID_ID}.md"
 RESULT=$(run_hook)
 assert_decision "addressing with review → approve" "approve" "$RESULT"
-assert_file_missing "state cleaned up" ".review-loop/state.md"
+assert_file_missing "state cleaned up" ".review-loop/state.json"
 
 echo ""
 echo "=== Addressing without review, first attempt → block ==="
@@ -163,7 +147,7 @@ touch "$TMPDIR/.review-loop/review-loop-runner.sh"
 echo "1" > "$TMPDIR/.review-loop/retries"
 RESULT=$(run_hook)
 assert_decision "addressing no review, try 2 → approve" "approve" "$RESULT"
-assert_file_missing "state cleaned up after fail-open" ".review-loop/state.md"
+assert_file_missing "state cleaned up after fail-open" ".review-loop/state.json"
 assert_file_missing "retries cleaned up" ".review-loop/retries"
 
 echo ""
@@ -172,7 +156,7 @@ reset_tmpdir
 write_state "unknown_phase" "$VALID_ID"
 RESULT=$(run_hook)
 assert_decision "unknown phase → approve" "approve" "$RESULT"
-assert_file_missing "state cleaned up" ".review-loop/state.md"
+assert_file_missing "state cleaned up" ".review-loop/state.json"
 
 echo ""
 echo "=== Addressing, no runner and no review → approve (orphan cleanup) ==="
@@ -180,7 +164,7 @@ reset_tmpdir
 write_state "addressing" "$VALID_ID"
 RESULT=$(run_hook)
 assert_decision "orphan addressing → approve" "approve" "$RESULT"
-assert_file_missing "state cleaned up" ".review-loop/state.md"
+assert_file_missing "state cleaned up" ".review-loop/state.json"
 
 echo ""
 echo "==============================="

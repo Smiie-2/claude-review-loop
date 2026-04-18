@@ -42,7 +42,7 @@ reviewer = "gemini"
 - Shell scripts must work on both macOS and Linux (handle `sed -i` differences)
 - The stop hook MUST always produce valid JSON to stdout — never let non-JSON text leak
 - Fail-open: on any error, approve exit rather than trapping the user
-- State lives in `.review-loop/state.md` — always clean up on exit
+- State lives in `.review-loop/state.json` (JSON, read/written with `jq`) — always clean up on exit
 - Review ID format: `YYYYMMDD-HHMMSS-hexhex` — validate before using in paths
 - `/review-loop` temp files use `review-loop-` prefix (`review-loop-runner.sh`, `review-loop-prompt.txt`); `/codex-review` uses `codex-review-` prefix — no collisions
 - All temp/state files go in `.review-loop/` at the project root (NOT `.claude/` — that triggers sensitive file detection)
